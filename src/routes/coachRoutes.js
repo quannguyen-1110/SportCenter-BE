@@ -1,0 +1,45 @@
+const express = require("express");
+
+const { createCoach } = require("../controllers/coachController");
+
+const router = express.Router();
+
+/**
+ * @swagger
+ * /api/coaches:
+ *   post:
+ *     summary: Create a coach profile
+ *     tags: [Coaches]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - fullName
+ *               - phone
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 example: 65abc1234567890123456789
+ *               fullName:
+ *                 type: string
+ *                 example: Nguyen Van B
+ *               phone:
+ *                 type: string
+ *                 example: "0901234567"
+ *     responses:
+ *       201:
+ *         description: Coach created successfully
+ *       400:
+ *         description: Invalid input
+ *       404:
+ *         description: User not found
+ *       409:
+ *         description: Coach profile already exists
+ */
+router.post("/", createCoach);
+
+module.exports = router;
