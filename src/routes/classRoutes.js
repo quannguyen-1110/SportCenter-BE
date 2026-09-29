@@ -4,6 +4,9 @@ const {
   createClass,
 } = require("../controllers/classController");
 
+const authMiddleware = require("../middlewares/authMiddleware");
+const roleMiddleware = require("../middlewares/roleMiddleware");
+
 const router = express.Router();
 
 /**
@@ -12,6 +15,8 @@ const router = express.Router();
  *   post:
  *     summary: Create a class
  *     tags: [Classes]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -37,11 +42,20 @@ const router = express.Router();
  *         description: Class created successfully
  *       400:
  *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
  *       404:
  *         description: Subject or Coach not found
  *       409:
  *         description: Coach is already assigned to another class
  */
-router.post("/", createClass);
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware("CENTER_MANAGER"),
+  createClass
+);
 
 module.exports = router;

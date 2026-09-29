@@ -4,6 +4,9 @@ const {
   createAttendance,
 } = require("../controllers/attendanceController");
 
+const authMiddleware = require("../middlewares/authMiddleware");
+const roleMiddleware = require("../middlewares/roleMiddleware");
+
 const router = express.Router();
 
 /**
@@ -12,6 +15,8 @@ const router = express.Router();
  *   post:
  *     summary: Record member attendance
  *     tags: [Attendances]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -38,11 +43,20 @@ const router = express.Router();
  *         description: Attendance recorded successfully
  *       400:
  *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
  *       404:
  *         description: Member or Class not found
  *       409:
  *         description: Attendance already recorded
  */
-router.post("/", createAttendance);
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware("CENTER_MANAGER", "COACH", "RECEPTIONIST"),
+  createAttendance
+);
 
 module.exports = router;

@@ -4,14 +4,19 @@ const {
   createPayment,
 } = require("../controllers/paymentController");
 
+const authMiddleware = require("../middlewares/authMiddleware");
+const roleMiddleware = require("../middlewares/roleMiddleware");
+
 const router = express.Router();
 
 /**
  * @swagger
  * /api/payments:
  *   post:
- *     summary: Create a payment
+ *     summary: Create a payment for a class registration
  *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -19,28 +24,40 @@ const router = express.Router();
  *           schema:
  *             type: object
  *             required:
- *               - memberMembershipId
+ *               - classRegistrationId
  *               - amount
- *               - paymentDate
+ *               - paymentMethod
  *             properties:
- *               memberMembershipId:
+ *               classRegistrationId:
  *                 type: string
  *                 example: 65abc1234567890123456789
  *               amount:
  *                 type: number
- *                 example: 1500000
- *               paymentDate:
+ *                 example: 500000
+ *               paymentMethod:
  *                 type: string
- *                 format: date
- *                 example: "2026-09-25"
+ *                 enum:
+ *                   - CASH
+ *                   - BANK_TRANSFER
+ *                   - ONLINE
+ *                 example: BANK_TRANSFER
  *     responses:
  *       201:
  *         description: Payment created successfully
  *       400:
  *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
  *       404:
- *         description: Member membership not found
+ *         description: Class registration not found
  */
-router.post("/", createPayment);
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
+  createPayment
+);
 
 module.exports = router;

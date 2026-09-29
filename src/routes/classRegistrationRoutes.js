@@ -4,6 +4,9 @@ const {
   registerClass,
 } = require("../controllers/classRegistrationController");
 
+const authMiddleware = require("../middlewares/authMiddleware");
+const roleMiddleware = require("../middlewares/roleMiddleware");
+
 const router = express.Router();
 
 /**
@@ -12,6 +15,8 @@ const router = express.Router();
  *   post:
  *     summary: Register a member for a class
  *     tags: [Class Registrations]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -33,11 +38,20 @@ const router = express.Router();
  *         description: Class registration successful
  *       400:
  *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
  *       404:
  *         description: Class or Member not found
  *       409:
  *         description: Member is already registered
  */
-router.post("/", registerClass);
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
+  registerClass
+);
 
 module.exports = router;

@@ -4,6 +4,9 @@ const {
   createSubject,
 } = require("../controllers/subjectController");
 
+const authMiddleware = require("../middlewares/authMiddleware");
+const roleMiddleware = require("../middlewares/roleMiddleware");
+
 const router = express.Router();
 
 /**
@@ -12,6 +15,8 @@ const router = express.Router();
  *   post:
  *     summary: Create a subject
  *     tags: [Subjects]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -29,9 +34,18 @@ const router = express.Router();
  *         description: Subject created successfully
  *       400:
  *         description: Subject name is required
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
  *       409:
  *         description: Subject already exists
  */
-router.post("/", createSubject);
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware("CENTER_MANAGER"),
+  createSubject
+);
 
 module.exports = router;

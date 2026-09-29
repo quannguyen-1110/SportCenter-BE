@@ -1,6 +1,8 @@
 const express = require("express");
 
 const { createCoach } = require("../controllers/coachController");
+const authMiddleware = require("../middlewares/authMiddleware");
+const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
 
@@ -10,6 +12,8 @@ const router = express.Router();
  *   post:
  *     summary: Create a coach profile
  *     tags: [Coaches]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -35,11 +39,20 @@ const router = express.Router();
  *         description: Coach created successfully
  *       400:
  *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
  *       404:
  *         description: User not found
  *       409:
  *         description: Coach profile already exists
  */
-router.post("/", createCoach);
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware("CENTER_MANAGER"),
+  createCoach
+);
 
 module.exports = router;

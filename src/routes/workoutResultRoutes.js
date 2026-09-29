@@ -4,6 +4,9 @@ const {
   createWorkoutResult,
 } = require("../controllers/workoutResultController");
 
+const authMiddleware = require("../middlewares/authMiddleware");
+const roleMiddleware = require("../middlewares/roleMiddleware");
+
 const router = express.Router();
 
 /**
@@ -12,6 +15,8 @@ const router = express.Router();
  *   post:
  *     summary: Create a workout result
  *     tags: [Workout Results]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -40,9 +45,18 @@ const router = express.Router();
  *         description: Workout result created successfully
  *       400:
  *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
  *       404:
  *         description: Workout plan or Member not found
  */
-router.post("/", createWorkoutResult);
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware("COACH", "MEMBER"),
+  createWorkoutResult
+);
 
 module.exports = router;

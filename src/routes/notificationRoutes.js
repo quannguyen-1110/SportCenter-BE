@@ -4,6 +4,9 @@ const {
   createNotification,
 } = require("../controllers/notificationController");
 
+const authMiddleware = require("../middlewares/authMiddleware");
+const roleMiddleware = require("../middlewares/roleMiddleware");
+
 const router = express.Router();
 
 /**
@@ -12,6 +15,8 @@ const router = express.Router();
  *   post:
  *     summary: Create a notification
  *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -37,9 +42,18 @@ const router = express.Router();
  *         description: Notification created successfully
  *       400:
  *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
  *       404:
  *         description: User not found
  */
-router.post("/", createNotification);
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware("CENTER_MANAGER", "COACH", "RECEPTIONIST"),
+  createNotification
+);
 
 module.exports = router;

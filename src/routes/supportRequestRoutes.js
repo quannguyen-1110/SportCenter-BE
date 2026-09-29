@@ -4,6 +4,9 @@ const {
   createSupportRequest,
 } = require("../controllers/supportRequestController");
 
+const authMiddleware = require("../middlewares/authMiddleware");
+const roleMiddleware = require("../middlewares/roleMiddleware");
+
 const router = express.Router();
 
 /**
@@ -12,6 +15,8 @@ const router = express.Router();
  *   post:
  *     summary: Create a support request
  *     tags: [Support Requests]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -33,9 +38,18 @@ const router = express.Router();
  *         description: Support request created successfully
  *       400:
  *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
  *       404:
  *         description: Member not found
  */
-router.post("/", createSupportRequest);
+router.post(
+  "/",
+  authMiddleware,
+  roleMiddleware("MEMBER"),
+  createSupportRequest
+);
 
 module.exports = router;
