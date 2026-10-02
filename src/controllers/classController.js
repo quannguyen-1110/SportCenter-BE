@@ -1,18 +1,27 @@
 const Class = require("../models/Class");
 const Subject = require("../models/Subject");
 const Coach = require("../models/Coach");
+const Course = require("../models/Course");
 
 const createClass = async (req, res) => {
   try {
-    const { name, subjectId, coachId } = req.body;
+    const {
+      name,
+      subjectId,
+      courseId,
+      coachId,
+    } = req.body;
 
-    if (!name || !subjectId || !coachId) {
+    // Validate required fields
+    if (!name || !subjectId || !courseId || !coachId) {
       return res.status(400).json({
         success: false,
-        message: "name, subjectId and coachId are required",
+        message:
+          "name, subjectId, courseId and coachId are required",
       });
     }
 
+    // Check subject
     const subject = await Subject.findById(subjectId);
 
     if (!subject) {
@@ -22,6 +31,17 @@ const createClass = async (req, res) => {
       });
     }
 
+    // Check course
+    const course = await Course.findById(courseId);
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: "Course not found",
+      });
+    }
+
+    // Check coach
     const coach = await Coach.findById(coachId);
 
     if (!coach) {
@@ -31,18 +51,24 @@ const createClass = async (req, res) => {
       });
     }
 
-    const existingClass = await Class.findOne({ coachId });
+    // One coach can only teach one class
+    const existingClass = await Class.findOne({
+      coachId,
+    });
 
     if (existingClass) {
       return res.status(409).json({
         success: false,
-        message: "This coach is already assigned to another class",
+        message:
+          "This coach is already assigned to another class",
       });
     }
 
+    // Create class
     const newClass = await Class.create({
       name: name.trim(),
       subjectId,
+      courseId,
       coachId,
     });
 
@@ -53,6 +79,7 @@ const createClass = async (req, res) => {
         id: newClass._id,
         name: newClass.name,
         subjectId: newClass.subjectId,
+        courseId: newClass.courseId,
         coachId: newClass.coachId,
       },
     });

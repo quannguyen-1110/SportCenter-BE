@@ -25,6 +25,9 @@ const router = express.Router();
  *             type: object
  *             required:
  *               - coachId
+ *               - memberId
+ *               - goal
+ *               - level
  *               - plan
  *             properties:
  *               coachId:
@@ -32,15 +35,38 @@ const router = express.Router();
  *                 example: 65abc1234567890123456789
  *               memberId:
  *                 type: string
- *                 nullable: true
  *                 example: 65def1234567890123456789
  *               classId:
  *                 type: string
  *                 nullable: true
  *                 example: 65ghi1234567890123456789
+ *               goal:
+ *                 type: string
+ *                 example: Weight loss
+ *               level:
+ *                 type: string
+ *                 enum:
+ *                   - BEGINNER
+ *                   - INTERMEDIATE
+ *                   - ADVANCED
+ *                 example: BEGINNER
  *               plan:
  *                 type: string
  *                 example: "Khởi động 10 phút. Squat 3x12. Push-up 3x10. Plank 3x30 giây."
+ *               source:
+ *                 type: string
+ *                 enum:
+ *                   - COACH
+ *                   - AI
+ *                 default: COACH
+ *                 example: COACH
+ *               status:
+ *                 type: string
+ *                 enum:
+ *                   - DRAFT
+ *                   - APPROVED
+ *                 default: DRAFT
+ *                 example: DRAFT
  *     responses:
  *       201:
  *         description: Workout plan created successfully
@@ -52,6 +78,8 @@ const router = express.Router();
  *         description: Access denied
  *       404:
  *         description: Coach, Member or Class not found
+ *       500:
+ *         description: Internal server error
  */
 router.post(
   "/",

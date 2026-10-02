@@ -1,8 +1,8 @@
 const express = require("express");
 
 const {
-  createClass,
-} = require("../controllers/classController");
+  createCourse,
+} = require("../controllers/courseController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
@@ -11,10 +11,10 @@ const router = express.Router();
 
 /**
  * @swagger
- * /api/classes:
+ * /api/courses:
  *   post:
- *     summary: Create a class
- *     tags: [Classes]
+ *     summary: Create a new course
+ *     tags: [Courses]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -25,41 +25,36 @@ const router = express.Router();
  *             type: object
  *             required:
  *               - name
- *               - subjectId
- *               - courseId
- *               - coachId
  *             properties:
  *               name:
  *                 type: string
- *                 example: Football Beginner
- *               subjectId:
+ *                 example: Yoga
+ *               description:
  *                 type: string
- *                 example: 65abc1234567890123456789
- *               courseId:
+ *                 example: Basic yoga training course
+ *               status:
  *                 type: string
- *                 example: 65ghi1234567890123456789
- *               coachId:
- *                 type: string
- *                 example: 65def1234567890123456789
+ *                 enum:
+ *                   - ACTIVE
+ *                   - INACTIVE
+ *                 example: ACTIVE
  *     responses:
  *       201:
- *         description: Class created successfully
+ *         description: Course created successfully
  *       400:
- *         description: Invalid input
+ *         description: Invalid request
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
- *       404:
- *         description: Subject, Course or Coach not found
  *       409:
- *         description: Coach is already assigned to another class
+ *         description: Course name already exists
  */
 router.post(
   "/",
   authMiddleware,
   roleMiddleware("CENTER_MANAGER"),
-  createClass
+  createCourse
 );
 
 module.exports = router;

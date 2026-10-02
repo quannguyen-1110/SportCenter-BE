@@ -13,6 +13,17 @@ const classRegistrationSchema = new mongoose.Schema(
       ref: "Member",
       required: true,
     },
+
+    status: {
+      type: String,
+      enum: ["PENDING_PAYMENT", "CONFIRMED", "CANCELLED"],
+      default: "PENDING_PAYMENT",
+    },
+
+    registeredAt: {
+      type: Date,
+      default: Date.now,
+    },
   },
   {
     timestamps: true,

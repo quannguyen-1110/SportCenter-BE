@@ -14,6 +14,12 @@ const classSchema = new mongoose.Schema(
       required: true,
     },
 
+    courseId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Course",
+      required: true,
+    },
+
     coachId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Coach",

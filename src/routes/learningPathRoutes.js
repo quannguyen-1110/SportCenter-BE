@@ -1,8 +1,8 @@
 const express = require("express");
 
 const {
-  createClass,
-} = require("../controllers/classController");
+  createLearningPath,
+} = require("../controllers/learningPathController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
@@ -11,10 +11,10 @@ const router = express.Router();
 
 /**
  * @swagger
- * /api/classes:
+ * /api/learning-paths:
  *   post:
- *     summary: Create a class
- *     tags: [Classes]
+ *     summary: Create a learning path
+ *     tags: [Learning Paths]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -24,42 +24,35 @@ const router = express.Router();
  *           schema:
  *             type: object
  *             required:
- *               - name
- *               - subjectId
  *               - courseId
- *               - coachId
+ *               - name
  *             properties:
- *               name:
- *                 type: string
- *                 example: Football Beginner
- *               subjectId:
- *                 type: string
- *                 example: 65abc1234567890123456789
  *               courseId:
  *                 type: string
- *                 example: 65ghi1234567890123456789
- *               coachId:
+ *                 example: 67abc1234567890123456789
+ *               name:
  *                 type: string
- *                 example: 65def1234567890123456789
+ *                 example: Weight Loss
+ *               description:
+ *                 type: string
+ *                 example: Learning path for members who want to lose weight
  *     responses:
  *       201:
- *         description: Class created successfully
+ *         description: Learning path created successfully
  *       400:
- *         description: Invalid input
+ *         description: Invalid request
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
  *       404:
- *         description: Subject, Course or Coach not found
- *       409:
- *         description: Coach is already assigned to another class
+ *         description: Course not found
  */
 router.post(
   "/",
   authMiddleware,
   roleMiddleware("CENTER_MANAGER"),
-  createClass
+  createLearningPath
 );
 
 module.exports = router;

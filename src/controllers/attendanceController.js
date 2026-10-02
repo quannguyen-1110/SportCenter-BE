@@ -1,18 +1,54 @@
 const Attendance = require("../models/Attendance");
 const Member = require("../models/Member");
 const Class = require("../models/Class");
+const Lesson = require("../models/Lesson");
 
 const createAttendance = async (req, res) => {
   try {
-    const { memberId, classId, date } = req.body;
+    const {
+      memberId,
+      classId,
+      lessonId,
+      date,
+      status,
+    } = req.body;
 
-    if (!memberId || !classId || !date) {
+    // Validate required fields
+    if (
+      !memberId ||
+      !classId ||
+      !lessonId ||
+      !date ||
+      !status
+    ) {
       return res.status(400).json({
         success: false,
-        message: "memberId, classId and date are required",
+        message:
+          "memberId, classId, lessonId, date and status are required",
       });
     }
 
+    // Validate status
+    const validStatuses = ["PRESENT", "ABSENT"];
+
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "status must be PRESENT or ABSENT",
+      });
+    }
+
+    // Validate date
+    const attendanceDate = new Date(date);
+
+    if (Number.isNaN(attendanceDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid date",
+      });
+    }
+
+    // Check member
     const member = await Member.findById(memberId);
 
     if (!member) {
@@ -22,6 +58,7 @@ const createAttendance = async (req, res) => {
       });
     }
 
+    // Check class
     const classData = await Class.findById(classId);
 
     if (!classData) {
@@ -31,23 +68,39 @@ const createAttendance = async (req, res) => {
       });
     }
 
+    // Check lesson
+    const lesson = await Lesson.findById(lessonId);
+
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: "Lesson not found",
+      });
+    }
+
+    // Check duplicate attendance
     const existingAttendance = await Attendance.findOne({
       memberId,
       classId,
-      date: new Date(date),
+      lessonId,
+      date: attendanceDate,
     });
 
     if (existingAttendance) {
       return res.status(409).json({
         success: false,
-        message: "Attendance already recorded for this date",
+        message:
+          "Attendance already recorded for this member, class, lesson and date",
       });
     }
 
+    // Create attendance
     const attendance = await Attendance.create({
       memberId,
       classId,
-      date: new Date(date),
+      lessonId,
+      date: attendanceDate,
+      status,
     });
 
     return res.status(201).json({
@@ -57,7 +110,9 @@ const createAttendance = async (req, res) => {
         id: attendance._id,
         memberId: attendance.memberId,
         classId: attendance.classId,
+        lessonId: attendance.lessonId,
         date: attendance.date,
+        status: attendance.status,
       },
     });
   } catch (error) {

@@ -7,7 +7,8 @@ const options = {
     info: {
       title: "Sport Center Management API",
       version: "1.0.0",
-      description: "API documentation for Sport Center Management System",
+      description:
+        "API documentation for Sport Center Management System",
     },
 
     servers: [
@@ -18,67 +19,67 @@ const options = {
     ],
 
     tags: [
-  {
-    name: "Authentication",
-    description: "Authentication APIs",
-  },
-  {
-    name: "Members",
-    description: "Member management APIs",
-  },
-  {
-    name: "Coaches",
-    description: "Coach management APIs",
-  },
-  {
-    name: "Subjects",
-    description: "Subject management APIs",
-  },
-  {
-    name: "Classes",
-    description: "Class management APIs",
-  },
-  {
-    name: "Class Registrations",
-    description: "Class registration APIs",
-  },
-  {
-    name: "Attendances",
-    description: "Attendance management APIs",
-  },
-  {
-    name: "Membership Packages",
-    description: "Membership package management APIs",
-  },
-  {
-    name: "Member Memberships",
-    description: "Member membership management APIs",
-  },
-  {
-    name: "Payments",
-    description: "Payment management APIs",
-  },
-  {
-    name: "Workout Plans",
-    description: "Workout plan management APIs",
-  },
-  {
-    name: "Workout Results",
-    description: "Workout result management APIs",
-  },
-  {
-    name: "Notifications",
-    description: "Notification management APIs",
-  },
-  {
-    name: "Support Requests",
-    description: "Support request management APIs",
-  },
-  {
-    name: "Activity Logs",
-    description: "Activity log management APIs",
-  },
-],
+      {
+        name: "Authentication",
+        description: "Authentication APIs",
+      },
+      {
+        name: "Members",
+        description: "Member management APIs",
+      },
+      {
+        name: "Coaches",
+        description: "Coach management APIs",
+      },
+      {
+        name: "Subjects",
+        description: "Subject management APIs",
+      },
+      {
+        name: "Classes",
+        description: "Class management APIs",
+      },
+      {
+        name: "Class Registrations",
+        description: "Class registration APIs",
+      },
+      {
+        name: "Attendances",
+        description: "Attendance management APIs",
+      },
+      {
+        name: "Payments",
+        description: "Payment management APIs",
+      },
+      {
+        name: "Workout Plans",
+        description: "Workout plan management APIs",
+      },
+      {
+        name: "Workout Results",
+        description: "Workout result management APIs",
+      },
+      {
+        name: "Notifications",
+        description: "Notification management APIs",
+      },
+      {
+        name: "Support Requests",
+        description: "Support request management APIs",
+      },
+      {
+        name: "Activity Logs",
+        description: "Activity log management APIs",
+      },
+      {
+        name: "Schedules",
+        description: "Class schedules management APIs",
+      },
+      {
+        name: "Courses",
+        description: "Course management APIs"
+      },
+    ],
 
     components: {
       securitySchemes: {

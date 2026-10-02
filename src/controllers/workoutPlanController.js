@@ -5,12 +5,28 @@ const Class = require("../models/Class");
 
 const createWorkoutPlan = async (req, res) => {
   try {
-    const { coachId, memberId, classId, plan } = req.body;
+    const {
+      coachId,
+      memberId,
+      classId,
+      goal,
+      level,
+      plan,
+      source,
+      status,
+    } = req.body;
 
-    if (!coachId || !plan) {
+    if (
+      !coachId ||
+      !memberId ||
+      !goal ||
+      !level ||
+      !plan
+    ) {
       return res.status(400).json({
         success: false,
-        message: "coachId and plan are required",
+        message:
+          "coachId, memberId, goal, level and plan are required",
       });
     }
 
@@ -23,15 +39,13 @@ const createWorkoutPlan = async (req, res) => {
       });
     }
 
-    if (memberId) {
-      const member = await Member.findById(memberId);
+    const member = await Member.findById(memberId);
 
-      if (!member) {
-        return res.status(404).json({
-          success: false,
-          message: "Member not found",
-        });
-      }
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Member not found",
+      });
     }
 
     if (classId) {
@@ -45,11 +59,49 @@ const createWorkoutPlan = async (req, res) => {
       }
     }
 
+    const validLevels = [
+      "BEGINNER",
+      "INTERMEDIATE",
+      "ADVANCED",
+    ];
+
+    if (!validLevels.includes(level)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "level must be BEGINNER, INTERMEDIATE or ADVANCED",
+      });
+    }
+
+    const validSources = ["COACH", "AI"];
+    const planSource = source || "COACH";
+
+    if (!validSources.includes(planSource)) {
+      return res.status(400).json({
+        success: false,
+        message: "source must be COACH or AI",
+      });
+    }
+
+    const validStatuses = ["DRAFT", "APPROVED"];
+    const planStatus = status || "DRAFT";
+
+    if (!validStatuses.includes(planStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "status must be DRAFT or APPROVED",
+      });
+    }
+
     const workoutPlan = await WorkoutPlan.create({
       coachId,
-      memberId: memberId || null,
+      memberId,
       classId: classId || null,
+      goal: goal.trim(),
+      level,
       plan: plan.trim(),
+      source: planSource,
+      status: planStatus,
     });
 
     return res.status(201).json({
@@ -60,7 +112,11 @@ const createWorkoutPlan = async (req, res) => {
         coachId: workoutPlan.coachId,
         memberId: workoutPlan.memberId,
         classId: workoutPlan.classId,
+        goal: workoutPlan.goal,
+        level: workoutPlan.level,
         plan: workoutPlan.plan,
+        source: workoutPlan.source,
+        status: workoutPlan.status,
         createdAt: workoutPlan.createdAt,
       },
     });

@@ -11,7 +11,7 @@ const workoutPlanSchema = new mongoose.Schema(
     memberId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Member",
-      default: null,
+      required: true,
     },
 
     classId: {
@@ -20,10 +20,34 @@ const workoutPlanSchema = new mongoose.Schema(
       default: null,
     },
 
+    goal: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    level: {
+      type: String,
+      enum: ["BEGINNER", "INTERMEDIATE", "ADVANCED"],
+      required: true,
+    },
+
     plan: {
       type: String,
       required: true,
       trim: true,
+    },
+
+    source: {
+      type: String,
+      enum: ["COACH", "AI"],
+      default: "COACH",
+    },
+
+    status: {
+      type: String,
+      enum: ["DRAFT", "APPROVED"],
+      default: "DRAFT",
     },
   },
   {

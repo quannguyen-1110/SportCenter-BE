@@ -2,9 +2,9 @@ const mongoose = require("mongoose");
 
 const paymentSchema = new mongoose.Schema(
   {
-    memberMembershipId: {
+    classRegistrationId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "MemberMembership",
+      ref: "ClassRegistration",
       required: true,
     },
 
@@ -14,9 +14,21 @@ const paymentSchema = new mongoose.Schema(
       min: 0,
     },
 
+    paymentMethod: {
+      type: String,
+      enum: ["CASH", "BANK_TRANSFER", "ONLINE"],
+      required: true,
+    },
+
+    status: {
+      type: String,
+      enum: ["PENDING", "SUCCESS", "FAILED"],
+      default: "PENDING",
+    },
+
     paymentDate: {
       type: Date,
-      required: true,
+      default: null,
     },
   },
   {

@@ -1,8 +1,9 @@
 const express = require("express");
 const cors = require("cors");
-const swaggerUi = require("swagger-ui-express");
 
+const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./config/swagger");
+
 const authRoutes = require("./routes/authRoutes");
 const memberRoutes = require("./routes/memberRoutes");
 const coachRoutes = require("./routes/coachRoutes");
@@ -15,16 +16,20 @@ const workoutResultRoutes = require("./routes/workoutResultRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const supportRequestRoutes = require("./routes/supportRequestRoutes");
 const activityLogRoutes = require("./routes/activityLogRoutes");
-const membershipPackageRoutes = require("./routes/membershipPackageRoutes");
-const memberMembershipRoutes = require("./routes/memberMembershipRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
+const scheduleRoutes = require("./routes/scheduleRoutes");
+const courseRoutes = require("./routes/courseRoutes");
+const learningPathRoutes = require("./routes/learningPathRoutes");
+const lessonRoutes = require("./routes/lessonRoutes");
+const lessonProgressRoutes = require("./routes/lessonProgressRoutes");
 
 const app = express();
 
-
-  
+// Middleware
 app.use(cors());
 app.use(express.json());
+
+// API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/members", memberRoutes);
 app.use("/api/coaches", coachRoutes);
@@ -37,9 +42,13 @@ app.use("/api/workout-results", workoutResultRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/support-requests", supportRequestRoutes);
 app.use("/api/activity-logs", activityLogRoutes);
-app.use("/api/membership-packages", membershipPackageRoutes);
-app.use("/api/member-memberships", memberMembershipRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/schedules", scheduleRoutes);
+app.use("/api/courses", courseRoutes);
+app.use("/api/learning-paths", learningPathRoutes);
+app.use("/api/lessons", lessonRoutes);
+app.use("/api/lesson-progress", lessonProgressRoutes);
+
 
 // Swagger
 app.use(
@@ -47,9 +56,6 @@ app.use(
   swaggerUi.serve,
   swaggerUi.setup(swaggerSpec)
 );
-
-// Authentication routes
-app.use("/api/auth", authRoutes);
 
 // Root API
 app.get("/", (req, res) => {

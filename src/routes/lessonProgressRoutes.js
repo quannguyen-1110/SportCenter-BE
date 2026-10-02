@@ -1,8 +1,8 @@
 const express = require("express");
 
 const {
-  createAttendance,
-} = require("../controllers/attendanceController");
+  createLessonProgress,
+} = require("../controllers/lessonProgressController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
@@ -11,10 +11,10 @@ const router = express.Router();
 
 /**
  * @swagger
- * /api/attendances:
+ * /api/lesson-progress:
  *   post:
- *     summary: Record member attendance
- *     tags: [Attendances]
+ *     summary: Create lesson progress
+ *     tags: [Lesson Progress]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -25,53 +25,40 @@ const router = express.Router();
  *             type: object
  *             required:
  *               - memberId
- *               - classId
  *               - lessonId
- *               - date
- *               - status
  *             properties:
  *               memberId:
  *                 type: string
- *                 example: 65abc1234567890123456789
- *               classId:
- *                 type: string
- *                 example: 65def1234567890123456789
+ *                 example: 67abc1234567890123456789
  *               lessonId:
  *                 type: string
- *                 example: 65ghi1234567890123456789
- *               date:
- *                 type: string
- *                 format: date
- *                 example: "2026-09-25"
+ *                 example: 67def1234567890123456789
  *               status:
  *                 type: string
  *                 enum:
- *                   - PRESENT
- *                   - ABSENT
- *                 example: PRESENT
+ *                   - NOT_STARTED
+ *                   - IN_PROGRESS
+ *                   - COMPLETED
+ *                 example: IN_PROGRESS
  *     responses:
  *       201:
- *         description: Attendance recorded successfully
+ *         description: Lesson progress created successfully
  *       400:
- *         description: Invalid input
+ *         description: Invalid request
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
  *       404:
- *         description: Member, Class or Lesson not found
+ *         description: Member or lesson not found
  *       409:
- *         description: Attendance already recorded
+ *         description: Lesson progress already exists
  */
 router.post(
   "/",
   authMiddleware,
-  roleMiddleware(
-    "CENTER_MANAGER",
-    "COACH",
-    "RECEPTIONIST"
-  ),
-  createAttendance
+  roleMiddleware("MEMBER", "COACH", "CENTER_MANAGER"),
+  createLessonProgress
 );
 
 module.exports = router;
