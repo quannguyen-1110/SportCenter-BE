@@ -2,12 +2,33 @@ const express = require("express");
 
 const {
   createWorkoutResult,
+  getWorkoutResults,
 } = require("../controllers/workoutResultController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/workout-results:
+ *   get:
+ *     summary: Get all workout results
+ *     tags: [Workout Results]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Workout results retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getWorkoutResults
+);
 
 /**
  * @swagger

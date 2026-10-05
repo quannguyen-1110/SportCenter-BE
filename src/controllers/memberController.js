@@ -63,6 +63,29 @@ const createMember = async (req, res) => {
   }
 };
 
+// GET all members
+const getMembers = async (req, res) => {
+  try {
+    const members = await Member.find()
+      .select("_id userId fullName phone goal level createdAt updatedAt")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Members retrieved successfully",
+      data: members,
+    });
+  } catch (error) {
+    console.error("Get members error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createMember,
+  getMembers,
 };

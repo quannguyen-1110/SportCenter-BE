@@ -2,12 +2,33 @@ const express = require("express");
 
 const {
   createAttendance,
+  getAttendances,
 } = require("../controllers/attendanceController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/attendances:
+ *   get:
+ *     summary: Get all attendance records
+ *     tags: [Attendances]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Attendances retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getAttendances
+);
 
 /**
  * @swagger

@@ -2,12 +2,33 @@ const express = require("express");
 
 const {
   createActivityLog,
+  getActivityLogs,
 } = require("../controllers/activityLogController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/activity-logs:
+ *   get:
+ *     summary: Get all activity logs
+ *     tags: [Activity Logs]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Activity logs retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getActivityLogs
+);
 
 /**
  * @swagger

@@ -27,7 +27,8 @@ const createLesson = async (req, res) => {
     if (order < 1) {
       return res.status(400).json({
         success: false,
-        message: "order must be greater than or equal to 1",
+        message:
+          "order must be greater than or equal to 1",
       });
     }
 
@@ -86,6 +87,39 @@ const createLesson = async (req, res) => {
   }
 };
 
+// Get all lessons
+const getLessons = async (req, res) => {
+  try {
+    const lessons = await Lesson.find()
+      .populate({
+        path: "learningPathId",
+        select: "name description courseId",
+        populate: {
+          path: "courseId",
+          select: "name description status",
+        },
+      })
+      .sort({
+        learningPathId: 1,
+        order: 1,
+      });
+
+    return res.status(200).json({
+      success: true,
+      message: "Lessons retrieved successfully",
+      data: lessons,
+    });
+  } catch (error) {
+    console.error("Get lessons error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createLesson,
+  getLessons,
 };

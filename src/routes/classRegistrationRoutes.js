@@ -2,12 +2,33 @@ const express = require("express");
 
 const {
   registerClass,
+  getClassRegistrations,
 } = require("../controllers/classRegistrationController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/class-registrations:
+ *   get:
+ *     summary: Get all class registrations
+ *     tags: [Class Registrations]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Class registrations retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getClassRegistrations
+);
 
 /**
  * @swagger
@@ -50,7 +71,11 @@ const router = express.Router();
 router.post(
   "/",
   authMiddleware,
-  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
+  roleMiddleware(
+    "MEMBER",
+    "RECEPTIONIST",
+    "CENTER_MANAGER"
+  ),
   registerClass
 );
 

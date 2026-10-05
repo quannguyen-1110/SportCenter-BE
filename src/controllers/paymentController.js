@@ -47,7 +47,8 @@ const createPayment = async (req, res) => {
     if (classRegistration.status === "CANCELLED") {
       return res.status(400).json({
         success: false,
-        message: "Cannot make payment for a cancelled registration",
+        message:
+          "Cannot make payment for a cancelled registration",
       });
     }
 
@@ -139,6 +140,41 @@ const createPayment = async (req, res) => {
   }
 };
 
+// Get all payments
+const getPayments = async (req, res) => {
+  try {
+    const payments = await Payment.find()
+      .populate({
+        path: "classRegistrationId",
+        populate: [
+          {
+            path: "memberId",
+            select: "fullName phone goal level",
+          },
+          {
+            path: "classId",
+            select: "name subjectId courseId coachId",
+          },
+        ],
+      })
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Payments retrieved successfully",
+      data: payments,
+    });
+  } catch (error) {
+    console.error("Get payments error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createPayment,
+  getPayments,
 };

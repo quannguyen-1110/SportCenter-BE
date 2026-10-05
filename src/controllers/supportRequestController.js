@@ -47,6 +47,32 @@ const createSupportRequest = async (req, res) => {
   }
 };
 
+// Get all support requests
+const getSupportRequests = async (req, res) => {
+  try {
+    const supportRequests = await SupportRequest.find()
+      .populate(
+        "memberId",
+        "fullName phone goal level"
+      )
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Support requests retrieved successfully",
+      data: supportRequests,
+    });
+  } catch (error) {
+    console.error("Get support requests error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createSupportRequest,
+  getSupportRequests,
 };

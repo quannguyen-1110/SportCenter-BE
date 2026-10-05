@@ -2,12 +2,33 @@ const express = require("express");
 
 const {
   createClass,
+  getClasses,
 } = require("../controllers/classController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/classes:
+ *   get:
+ *     summary: Get all classes
+ *     tags: [Classes]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Classes retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getClasses
+);
 
 /**
  * @swagger

@@ -56,10 +56,15 @@ const getSchedules = async (req, res) => {
     const schedules = await Schedule.find()
       .populate({
         path: "classId",
+        select: "name subjectId courseId coachId",
         populate: [
           {
             path: "subjectId",
             select: "name",
+          },
+          {
+            path: "courseId",
+            select: "name description status",
           },
           {
             path: "coachId",
@@ -69,7 +74,8 @@ const getSchedules = async (req, res) => {
       })
       .populate({
         path: "lessonId",
-        select: "title description order",
+        select:
+          "title description order learningPathId",
       })
       .sort({
         date: 1,
@@ -78,6 +84,7 @@ const getSchedules = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      message: "Schedules retrieved successfully",
       data: schedules,
     });
   } catch (error) {

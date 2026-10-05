@@ -1,10 +1,34 @@
 const express = require("express");
 
-const { createCoach } = require("../controllers/coachController");
+const {
+  createCoach,
+  getCoaches,
+} = require("../controllers/coachController");
+
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/coaches:
+ *   get:
+ *     summary: Get all coaches
+ *     tags: [Coaches]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Coaches retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getCoaches
+);
 
 /**
  * @swagger

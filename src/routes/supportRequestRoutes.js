@@ -2,12 +2,33 @@ const express = require("express");
 
 const {
   createSupportRequest,
+  getSupportRequests,
 } = require("../controllers/supportRequestController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/support-requests:
+ *   get:
+ *     summary: Get all support requests
+ *     tags: [Support Requests]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Support requests retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getSupportRequests
+);
 
 /**
  * @swagger

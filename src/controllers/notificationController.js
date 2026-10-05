@@ -49,6 +49,32 @@ const createNotification = async (req, res) => {
   }
 };
 
+// Get all notifications
+const getNotifications = async (req, res) => {
+  try {
+    const notifications = await Notification.find()
+      .populate(
+        "userId",
+        "email role status"
+      )
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Notifications retrieved successfully",
+      data: notifications,
+    });
+  } catch (error) {
+    console.error("Get notifications error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createNotification,
+  getNotifications,
 };

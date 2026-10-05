@@ -48,6 +48,29 @@ const createCourse = async (req, res) => {
   }
 };
 
+// Get all courses
+const getCourses = async (req, res) => {
+  try {
+    const courses = await Course.find()
+      .select("_id name description status createdAt updatedAt")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Courses retrieved successfully",
+      data: courses,
+    });
+  } catch (error) {
+    console.error("Get courses error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createCourse,
+  getCourses,
 };

@@ -55,6 +55,35 @@ const createLearningPath = async (req, res) => {
   }
 };
 
+// Get all learning paths
+const getLearningPaths = async (req, res) => {
+  try {
+    const learningPaths = await LearningPath.find()
+      .populate(
+        "courseId",
+        "name description status"
+      )
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Learning paths retrieved successfully",
+      data: learningPaths,
+    });
+  } catch (error) {
+    console.error(
+      "Get learning paths error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createLearningPath,
+  getLearningPaths,
 };

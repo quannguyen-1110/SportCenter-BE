@@ -25,7 +25,8 @@ const createLessonProgress = async (req, res) => {
       "COMPLETED",
     ];
 
-    const progressStatus = status || "NOT_STARTED";
+    const progressStatus =
+      status || "NOT_STARTED";
 
     if (!validStatuses.includes(progressStatus)) {
       return res.status(400).json({
@@ -109,6 +110,39 @@ const createLessonProgress = async (req, res) => {
   }
 };
 
+// Get all lesson progress
+const getLessonProgress = async (req, res) => {
+  try {
+    const lessonProgress = await LessonProgress.find()
+      .populate(
+        "memberId",
+        "fullName phone goal level"
+      )
+      .populate(
+        "lessonId",
+        "title description order learningPathId"
+      )
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Lesson progress retrieved successfully",
+      data: lessonProgress,
+    });
+  } catch (error) {
+    console.error(
+      "Get lesson progress error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createLessonProgress,
+  getLessonProgress,
 };

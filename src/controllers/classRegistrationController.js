@@ -79,6 +79,33 @@ const registerClass = async (req, res) => {
   }
 };
 
+// Get all class registrations
+const getClassRegistrations = async (req, res) => {
+  try {
+    const registrations = await ClassRegistration.find()
+      .populate("memberId", "fullName phone goal level")
+      .populate(
+        "classId",
+        "name subjectId courseId coachId"
+      )
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Class registrations retrieved successfully",
+      data: registrations,
+    });
+  } catch (error) {
+    console.error("Get class registrations error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   registerClass,
+  getClassRegistrations,
 };

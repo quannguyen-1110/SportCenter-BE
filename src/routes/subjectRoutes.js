@@ -2,6 +2,7 @@ const express = require("express");
 
 const {
   createSubject,
+  getSubjects,
 } = require("../controllers/subjectController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -46,6 +47,28 @@ router.post(
   authMiddleware,
   roleMiddleware("CENTER_MANAGER"),
   createSubject
+);
+
+/**
+ * @swagger
+ * /api/subjects:
+ *   get:
+ *     summary: Get all subjects
+ *     tags: [Subjects]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Subjects retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getSubjects
 );
 
 module.exports = router;

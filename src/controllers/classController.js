@@ -93,6 +93,31 @@ const createClass = async (req, res) => {
   }
 };
 
+// GET all classes
+const getClasses = async (req, res) => {
+  try {
+    const classes = await Class.find()
+      .populate("subjectId", "name")
+      .populate("courseId", "name description status")
+      .populate("coachId", "fullName phone")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Classes retrieved successfully",
+      data: classes,
+    });
+  } catch (error) {
+    console.error("Get classes error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createClass,
+  getClasses,
 };

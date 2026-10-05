@@ -46,6 +46,32 @@ const createActivityLog = async (req, res) => {
   }
 };
 
+// Get all activity logs
+const getActivityLogs = async (req, res) => {
+  try {
+    const activityLogs = await ActivityLog.find()
+      .populate(
+        "userId",
+        "email role status"
+      )
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Activity logs retrieved successfully",
+      data: activityLogs,
+    });
+  } catch (error) {
+    console.error("Get activity logs error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createActivityLog,
+  getActivityLogs,
 };

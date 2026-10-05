@@ -2,6 +2,7 @@ const express = require("express");
 
 const {
   createLesson,
+  getLessons,
 } = require("../controllers/lessonController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -59,6 +60,28 @@ router.post(
   authMiddleware,
   roleMiddleware("CENTER_MANAGER"),
   createLesson
+);
+
+/**
+ * @swagger
+ * /api/lessons:
+ *   get:
+ *     summary: Get all lessons
+ *     tags: [Lessons]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lessons retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getLessons
 );
 
 module.exports = router;

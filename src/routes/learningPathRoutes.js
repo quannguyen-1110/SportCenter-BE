@@ -2,6 +2,7 @@ const express = require("express");
 
 const {
   createLearningPath,
+  getLearningPaths,
 } = require("../controllers/learningPathController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -53,6 +54,28 @@ router.post(
   authMiddleware,
   roleMiddleware("CENTER_MANAGER"),
   createLearningPath
+);
+
+/**
+ * @swagger
+ * /api/learning-paths:
+ *   get:
+ *     summary: Get all learning paths
+ *     tags: [Learning Paths]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Learning paths retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getLearningPaths
 );
 
 module.exports = router;

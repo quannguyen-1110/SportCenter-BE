@@ -130,6 +130,40 @@ const createWorkoutPlan = async (req, res) => {
   }
 };
 
+// Get all workout plans
+const getWorkoutPlans = async (req, res) => {
+  try {
+    const workoutPlans = await WorkoutPlan.find()
+      .populate(
+        "coachId",
+        "fullName phone"
+      )
+      .populate(
+        "memberId",
+        "fullName phone goal level"
+      )
+      .populate(
+        "classId",
+        "name subjectId courseId coachId"
+      )
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Workout plans retrieved successfully",
+      data: workoutPlans,
+    });
+  } catch (error) {
+    console.error("Get workout plans error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createWorkoutPlan,
+  getWorkoutPlans,
 };

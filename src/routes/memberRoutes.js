@@ -1,10 +1,34 @@
 const express = require("express");
 
-const { createMember } = require("../controllers/memberController");
+const {
+  createMember,
+  getMembers,
+} = require("../controllers/memberController");
+
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/members:
+ *   get:
+ *     summary: Get all members
+ *     tags: [Members]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Members retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getMembers
+);
 
 /**
  * @swagger

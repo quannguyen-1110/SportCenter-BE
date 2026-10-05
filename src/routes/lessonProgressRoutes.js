@@ -2,12 +2,33 @@ const express = require("express");
 
 const {
   createLessonProgress,
+  getLessonProgress,
 } = require("../controllers/lessonProgressController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/lesson-progress:
+ *   get:
+ *     summary: Get all lesson progress
+ *     tags: [Lesson Progress]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lesson progress retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getLessonProgress
+);
 
 /**
  * @swagger
@@ -57,7 +78,11 @@ const router = express.Router();
 router.post(
   "/",
   authMiddleware,
-  roleMiddleware("MEMBER", "COACH", "CENTER_MANAGER"),
+  roleMiddleware(
+    "MEMBER",
+    "COACH",
+    "CENTER_MANAGER"
+  ),
   createLessonProgress
 );
 

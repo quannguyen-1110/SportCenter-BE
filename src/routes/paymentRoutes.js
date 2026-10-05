@@ -2,12 +2,33 @@ const express = require("express");
 
 const {
   createPayment,
+  getPayments,
 } = require("../controllers/paymentController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/payments:
+ *   get:
+ *     summary: Get all payments
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Payments retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getPayments
+);
 
 /**
  * @swagger
@@ -56,7 +77,11 @@ const router = express.Router();
 router.post(
   "/",
   authMiddleware,
-  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
+  roleMiddleware(
+    "MEMBER",
+    "RECEPTIONIST",
+    "CENTER_MANAGER"
+  ),
   createPayment
 );
 

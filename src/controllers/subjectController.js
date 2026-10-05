@@ -44,6 +44,29 @@ const createSubject = async (req, res) => {
   }
 };
 
+// GET all subjects
+const getSubjects = async (req, res) => {
+  try {
+    const subjects = await Subject.find()
+      .select("_id name createdAt updatedAt")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Subjects retrieved successfully",
+      data: subjects,
+    });
+  } catch (error) {
+    console.error("Get subjects error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createSubject,
+  getSubjects,
 };

@@ -125,6 +125,40 @@ const createAttendance = async (req, res) => {
   }
 };
 
+// Get all attendances
+const getAttendances = async (req, res) => {
+  try {
+    const attendances = await Attendance.find()
+      .populate(
+        "memberId",
+        "fullName phone goal level"
+      )
+      .populate(
+        "classId",
+        "name subjectId courseId coachId"
+      )
+      .populate(
+        "lessonId",
+        "title description order learningPathId"
+      )
+      .sort({ date: -1, createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Attendances retrieved successfully",
+      data: attendances,
+    });
+  } catch (error) {
+    console.error("Get attendances error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createAttendance,
+  getAttendances,
 };

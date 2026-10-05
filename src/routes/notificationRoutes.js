@@ -2,12 +2,33 @@ const express = require("express");
 
 const {
   createNotification,
+  getNotifications,
 } = require("../controllers/notificationController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/notifications:
+ *   get:
+ *     summary: Get all notifications
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notifications retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get(
+  "/",
+  authMiddleware,
+  getNotifications
+);
 
 /**
  * @swagger
@@ -52,7 +73,11 @@ const router = express.Router();
 router.post(
   "/",
   authMiddleware,
-  roleMiddleware("CENTER_MANAGER", "COACH", "RECEPTIONIST"),
+  roleMiddleware(
+    "CENTER_MANAGER",
+    "COACH",
+    "RECEPTIONIST"
+  ),
   createNotification
 );
 

@@ -63,6 +63,29 @@ const createCoach = async (req, res) => {
   }
 };
 
+// GET all coaches
+const getCoaches = async (req, res) => {
+  try {
+    const coaches = await Coach.find()
+      .select("_id userId fullName phone createdAt updatedAt")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Coaches retrieved successfully",
+      data: coaches,
+    });
+  } catch (error) {
+    console.error("Get coaches error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createCoach,
+  getCoaches,
 };
