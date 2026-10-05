@@ -1,6 +1,6 @@
 const Schedule = require("../models/Schedule");
 
-// Create schedule
+// CREATE schedule
 const createSchedule = async (req, res) => {
   try {
     const {
@@ -50,7 +50,7 @@ const createSchedule = async (req, res) => {
   }
 };
 
-// Get all schedules
+// GET all schedules
 const getSchedules = async (req, res) => {
   try {
     const schedules = await Schedule.find()
@@ -97,7 +97,103 @@ const getSchedules = async (req, res) => {
   }
 };
 
+// UPDATE schedule
+const updateSchedule = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const {
+      classId,
+      lessonId,
+      date,
+      startTime,
+      endTime,
+      status,
+    } = req.body;
+
+    if (
+      !classId ||
+      !lessonId ||
+      !date ||
+      !startTime ||
+      !endTime
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "classId, lessonId, date, startTime and endTime are required",
+      });
+    }
+
+    const schedule = await Schedule.findById(id);
+
+    if (!schedule) {
+      return res.status(404).json({
+        success: false,
+        message: "Schedule not found",
+      });
+    }
+
+    schedule.classId = classId;
+    schedule.lessonId = lessonId;
+    schedule.date = date;
+    schedule.startTime = startTime;
+    schedule.endTime = endTime;
+
+    if (status) {
+      schedule.status = status;
+    }
+
+    await schedule.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Schedule updated successfully",
+      data: schedule,
+    });
+  } catch (error) {
+    console.error("Update schedule error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// DELETE schedule
+const deleteSchedule = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const schedule = await Schedule.findById(id);
+
+    if (!schedule) {
+      return res.status(404).json({
+        success: false,
+        message: "Schedule not found",
+      });
+    }
+
+    await Schedule.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Schedule deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete schedule error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createSchedule,
   getSchedules,
+  updateSchedule,
+  deleteSchedule,
 };

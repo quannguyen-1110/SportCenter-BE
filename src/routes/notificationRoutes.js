@@ -3,6 +3,7 @@ const express = require("express");
 const {
   createNotification,
   getNotifications,
+  updateNotification,
 } = require("../controllers/notificationController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -79,6 +80,49 @@ router.post(
     "RECEPTIONIST"
   ),
   createNotification
+);
+
+/**
+ * @swagger
+ * /api/notifications/{id}:
+ *   put:
+ *     summary: Mark a notification as read or unread
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: 65abc1234567890123456789
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - isRead
+ *             properties:
+ *               isRead:
+ *                 type: boolean
+ *                 example: true
+ *     responses:
+ *       200:
+ *         description: Notification updated successfully
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       404:
+ *         description: Notification not found
+ */
+router.put(
+  "/:id",
+  authMiddleware,
+  updateNotification
 );
 
 module.exports = router;

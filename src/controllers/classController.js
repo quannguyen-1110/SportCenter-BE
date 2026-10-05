@@ -3,6 +3,7 @@ const Subject = require("../models/Subject");
 const Coach = require("../models/Coach");
 const Course = require("../models/Course");
 
+// CREATE class
 const createClass = async (req, res) => {
   try {
     const {
@@ -12,8 +13,13 @@ const createClass = async (req, res) => {
       coachId,
     } = req.body;
 
-    // Validate required fields
-    if (!name || !subjectId || !courseId || !coachId) {
+    if (
+      !name ||
+      !name.trim() ||
+      !subjectId ||
+      !courseId ||
+      !coachId
+    ) {
       return res.status(400).json({
         success: false,
         message:
@@ -21,7 +27,6 @@ const createClass = async (req, res) => {
       });
     }
 
-    // Check subject
     const subject = await Subject.findById(subjectId);
 
     if (!subject) {
@@ -31,7 +36,6 @@ const createClass = async (req, res) => {
       });
     }
 
-    // Check course
     const course = await Course.findById(courseId);
 
     if (!course) {
@@ -41,7 +45,6 @@ const createClass = async (req, res) => {
       });
     }
 
-    // Check coach
     const coach = await Coach.findById(coachId);
 
     if (!coach) {
@@ -64,7 +67,6 @@ const createClass = async (req, res) => {
       });
     }
 
-    // Create class
     const newClass = await Class.create({
       name: name.trim(),
       subjectId,
@@ -117,7 +119,143 @@ const getClasses = async (req, res) => {
   }
 };
 
+// UPDATE class
+const updateClass = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const {
+      name,
+      subjectId,
+      courseId,
+      coachId,
+    } = req.body;
+
+    if (
+      !name ||
+      !name.trim() ||
+      !subjectId ||
+      !courseId ||
+      !coachId
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "name, subjectId, courseId and coachId are required",
+      });
+    }
+
+    const existingClass = await Class.findById(id);
+
+    if (!existingClass) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found",
+      });
+    }
+
+    const subject = await Subject.findById(subjectId);
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: "Subject not found",
+      });
+    }
+
+    const course = await Course.findById(courseId);
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: "Course not found",
+      });
+    }
+
+    const coach = await Coach.findById(coachId);
+
+    if (!coach) {
+      return res.status(404).json({
+        success: false,
+        message: "Coach not found",
+      });
+    }
+
+    // Check whether another class is already using this coach
+    const classUsingCoach = await Class.findOne({
+      coachId,
+      _id: { $ne: id },
+    });
+
+    if (classUsingCoach) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "This coach is already assigned to another class",
+      });
+    }
+
+    existingClass.name = name.trim();
+    existingClass.subjectId = subjectId;
+    existingClass.courseId = courseId;
+    existingClass.coachId = coachId;
+
+    await existingClass.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Class updated successfully",
+      data: {
+        id: existingClass._id,
+        name: existingClass.name,
+        subjectId: existingClass.subjectId,
+        courseId: existingClass.courseId,
+        coachId: existingClass.coachId,
+      },
+    });
+  } catch (error) {
+    console.error("Update class error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// DELETE class
+const deleteClass = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const existingClass = await Class.findById(id);
+
+    if (!existingClass) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found",
+      });
+    }
+
+    await Class.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Class deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete class error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createClass,
   getClasses,
+  updateClass,
+  deleteClass,
 };

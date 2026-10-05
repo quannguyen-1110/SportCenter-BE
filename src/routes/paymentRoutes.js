@@ -3,6 +3,7 @@ const express = require("express");
 const {
   createPayment,
   getPayments,
+  updatePayment,
 } = require("../controllers/paymentController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -62,6 +63,17 @@ router.get(
  *                   - BANK_TRANSFER
  *                   - ONLINE
  *                 example: BANK_TRANSFER
+ *               status:
+ *                 type: string
+ *                 enum:
+ *                   - PENDING
+ *                   - SUCCESS
+ *                   - FAILED
+ *                 example: SUCCESS
+ *               paymentDate:
+ *                 type: string
+ *                 format: date-time
+ *                 example: 2026-10-05T10:00:00.000Z
  *     responses:
  *       201:
  *         description: Payment created successfully
@@ -83,6 +95,79 @@ router.post(
     "CENTER_MANAGER"
   ),
   createPayment
+);
+
+/**
+ * @swagger
+ * /api/payments/{id}:
+ *   put:
+ *     summary: Update a payment
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Payment ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - classRegistrationId
+ *               - amount
+ *               - paymentMethod
+ *             properties:
+ *               classRegistrationId:
+ *                 type: string
+ *                 example: 65abc1234567890123456789
+ *               amount:
+ *                 type: number
+ *                 example: 500000
+ *               paymentMethod:
+ *                 type: string
+ *                 enum:
+ *                   - CASH
+ *                   - BANK_TRANSFER
+ *                   - ONLINE
+ *                 example: BANK_TRANSFER
+ *               status:
+ *                 type: string
+ *                 enum:
+ *                   - PENDING
+ *                   - SUCCESS
+ *                   - FAILED
+ *                 example: SUCCESS
+ *               paymentDate:
+ *                 type: string
+ *                 format: date-time
+ *                 example: 2026-10-05T10:00:00.000Z
+ *     responses:
+ *       200:
+ *         description: Payment updated successfully
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Payment or Class registration not found
+ */
+router.put(
+  "/:id",
+  authMiddleware,
+  roleMiddleware(
+    "MEMBER",
+    "RECEPTIONIST",
+    "CENTER_MANAGER"
+  ),
+  updatePayment
 );
 
 module.exports = router;

@@ -3,6 +3,7 @@ const express = require("express");
 const {
   createSupportRequest,
   getSupportRequests,
+  updateSupportRequest,
 } = require("../controllers/supportRequestController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -71,6 +72,58 @@ router.post(
   authMiddleware,
   roleMiddleware("MEMBER"),
   createSupportRequest
+);
+
+/**
+ * @swagger
+ * /api/support-requests/{id}:
+ *   put:
+ *     summary: Update support request status
+ *     tags: [Support Requests]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: 65abc1234567890123456789
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum:
+ *                   - PENDING
+ *                   - RESOLVED
+ *                 example: RESOLVED
+ *     responses:
+ *       200:
+ *         description: Support request updated successfully
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Support request not found
+ */
+router.put(
+  "/:id",
+  authMiddleware,
+  roleMiddleware(
+    "CENTER_MANAGER",
+    "RECEPTIONIST"
+  ),
+  updateSupportRequest
 );
 
 module.exports = router;

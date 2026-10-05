@@ -3,6 +3,8 @@ const express = require("express");
 const {
   createLesson,
   getLessons,
+  updateLesson,
+  deleteLesson,
 } = require("../controllers/lessonController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -82,6 +84,99 @@ router.get(
   "/",
   authMiddleware,
   getLessons
+);
+
+/**
+ * @swagger
+ * /api/lessons/{id}:
+ *   put:
+ *     summary: Update a lesson
+ *     tags: [Lessons]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: 67abc1234567890123456789
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               learningPathId:
+ *                 type: string
+ *                 example: 67abc1234567890123456789
+ *               title:
+ *                 type: string
+ *                 example: Advanced Yoga Techniques
+ *               description:
+ *                 type: string
+ *                 example: Advanced yoga movements and breathing techniques
+ *               order:
+ *                 type: integer
+ *                 example: 2
+ *     responses:
+ *       200:
+ *         description: Lesson updated successfully
+ *       400:
+ *         description: Invalid request
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Lesson or learning path not found
+ *       409:
+ *         description: Lesson order already exists
+ *       500:
+ *         description: Internal server error
+ */
+router.put(
+  "/:id",
+  authMiddleware,
+  roleMiddleware("CENTER_MANAGER"),
+  updateLesson
+);
+
+/**
+ * @swagger
+ * /api/lessons/{id}:
+ *   delete:
+ *     summary: Delete a lesson
+ *     tags: [Lessons]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: 67abc1234567890123456789
+ *     responses:
+ *       200:
+ *         description: Lesson deleted successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Lesson not found
+ *       409:
+ *         description: Lesson is being used by a schedule
+ *       500:
+ *         description: Internal server error
+ */
+router.delete(
+  "/:id",
+  authMiddleware,
+  roleMiddleware("CENTER_MANAGER"),
+  deleteLesson
 );
 
 module.exports = router;

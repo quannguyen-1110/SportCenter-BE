@@ -2,6 +2,7 @@ const LessonProgress = require("../models/LessonProgress");
 const Member = require("../models/Member");
 const Lesson = require("../models/Lesson");
 
+// CREATE lesson progress
 const createLessonProgress = async (req, res) => {
   try {
     const {
@@ -25,8 +26,7 @@ const createLessonProgress = async (req, res) => {
       "COMPLETED",
     ];
 
-    const progressStatus =
-      status || "NOT_STARTED";
+    const progressStatus = status || "NOT_STARTED";
 
     if (!validStatuses.includes(progressStatus)) {
       return res.status(400).json({
@@ -110,7 +110,7 @@ const createLessonProgress = async (req, res) => {
   }
 };
 
-// Get all lesson progress
+// GET all lesson progress
 const getLessonProgress = async (req, res) => {
   try {
     const lessonProgress = await LessonProgress.find()
@@ -142,7 +142,121 @@ const getLessonProgress = async (req, res) => {
   }
 };
 
+// UPDATE lesson progress
+const updateLessonProgress = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const {
+      memberId,
+      lessonId,
+      status,
+    } = req.body;
+
+    // Validate required fields
+    if (!memberId || !lessonId || !status) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "memberId, lessonId and status are required",
+      });
+    }
+
+    // Validate status
+    const validStatuses = [
+      "NOT_STARTED",
+      "IN_PROGRESS",
+      "COMPLETED",
+    ];
+
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "status must be NOT_STARTED, IN_PROGRESS or COMPLETED",
+      });
+    }
+
+    // Check progress
+    const progress =
+      await LessonProgress.findById(id);
+
+    if (!progress) {
+      return res.status(404).json({
+        success: false,
+        message: "Lesson progress not found",
+      });
+    }
+
+    // Check member
+    const member = await Member.findById(memberId);
+
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Member not found",
+      });
+    }
+
+    // Check lesson
+    const lesson = await Lesson.findById(lessonId);
+
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: "Lesson not found",
+      });
+    }
+
+    // Check duplicate progress
+    const existingProgress =
+      await LessonProgress.findOne({
+        memberId,
+        lessonId,
+        _id: { $ne: id },
+      });
+
+    if (existingProgress) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Lesson progress already exists for this member",
+      });
+    }
+
+    // Update progress
+    progress.memberId = memberId;
+    progress.lessonId = lessonId;
+    progress.status = status;
+
+    if (status === "COMPLETED") {
+      progress.completedAt = new Date();
+    } else {
+      progress.completedAt = null;
+    }
+
+    await progress.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Lesson progress updated successfully",
+      data: progress,
+    });
+  } catch (error) {
+    console.error(
+      "Update lesson progress error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createLessonProgress,
   getLessonProgress,
+  updateLessonProgress,
 };

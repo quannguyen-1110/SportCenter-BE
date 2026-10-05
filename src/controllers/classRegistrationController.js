@@ -2,11 +2,11 @@ const ClassRegistration = require("../models/ClassRegistration");
 const Class = require("../models/Class");
 const Member = require("../models/Member");
 
+// CREATE class registration
 const registerClass = async (req, res) => {
   try {
     const { classId, memberId } = req.body;
 
-    // Validate required fields
     if (!classId || !memberId) {
       return res.status(400).json({
         success: false,
@@ -79,11 +79,14 @@ const registerClass = async (req, res) => {
   }
 };
 
-// Get all class registrations
+// GET all class registrations
 const getClassRegistrations = async (req, res) => {
   try {
     const registrations = await ClassRegistration.find()
-      .populate("memberId", "fullName phone goal level")
+      .populate(
+        "memberId",
+        "fullName phone goal level"
+      )
       .populate(
         "classId",
         "name subjectId courseId coachId"
@@ -96,7 +99,112 @@ const getClassRegistrations = async (req, res) => {
       data: registrations,
     });
   } catch (error) {
-    console.error("Get class registrations error:", error);
+    console.error(
+      "Get class registrations error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// UPDATE class registration
+const updateClassRegistration = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { classId, memberId, status } = req.body;
+
+    if (!classId || !memberId) {
+      return res.status(400).json({
+        success: false,
+        message: "classId and memberId are required",
+      });
+    }
+
+    if (
+      status &&
+      ![
+        "PENDING_PAYMENT",
+        "CONFIRMED",
+        "CANCELLED",
+      ].includes(status)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid class registration status",
+      });
+    }
+
+    // Check registration
+    const registration =
+      await ClassRegistration.findById(id);
+
+    if (!registration) {
+      return res.status(404).json({
+        success: false,
+        message: "Class registration not found",
+      });
+    }
+
+    // Check class
+    const classData = await Class.findById(classId);
+
+    if (!classData) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found",
+      });
+    }
+
+    // Check member
+    const member = await Member.findById(memberId);
+
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Member not found",
+      });
+    }
+
+    // Check duplicate registration
+    const existingRegistration =
+      await ClassRegistration.findOne({
+        classId,
+        memberId,
+        _id: { $ne: id },
+      });
+
+    if (existingRegistration) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Member is already registered for this class",
+      });
+    }
+
+    registration.classId = classId;
+    registration.memberId = memberId;
+
+    if (status) {
+      registration.status = status;
+    }
+
+    await registration.save();
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Class registration updated successfully",
+      data: registration,
+    });
+  } catch (error) {
+    console.error(
+      "Update class registration error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -108,4 +216,5 @@ const getClassRegistrations = async (req, res) => {
 module.exports = {
   registerClass,
   getClassRegistrations,
+  updateClassRegistration,
 };

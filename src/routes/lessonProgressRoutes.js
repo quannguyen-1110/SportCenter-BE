@@ -3,6 +3,7 @@ const express = require("express");
 const {
   createLessonProgress,
   getLessonProgress,
+  updateLessonProgress,
 } = require("../controllers/lessonProgressController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -84,6 +85,70 @@ router.post(
     "CENTER_MANAGER"
   ),
   createLessonProgress
+);
+
+/**
+ * @swagger
+ * /api/lesson-progress/{id}:
+ *   put:
+ *     summary: Update lesson progress
+ *     tags: [Lesson Progress]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Lesson progress ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - memberId
+ *               - lessonId
+ *               - status
+ *             properties:
+ *               memberId:
+ *                 type: string
+ *                 example: 67abc1234567890123456789
+ *               lessonId:
+ *                 type: string
+ *                 example: 67def1234567890123456789
+ *               status:
+ *                 type: string
+ *                 enum:
+ *                   - NOT_STARTED
+ *                   - IN_PROGRESS
+ *                   - COMPLETED
+ *                 example: COMPLETED
+ *     responses:
+ *       200:
+ *         description: Lesson progress updated successfully
+ *       400:
+ *         description: Invalid request
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Lesson progress, Member or Lesson not found
+ *       409:
+ *         description: Lesson progress already exists
+ */
+router.put(
+  "/:id",
+  authMiddleware,
+  roleMiddleware(
+    "MEMBER",
+    "COACH",
+    "CENTER_MANAGER"
+  ),
+  updateLessonProgress
 );
 
 module.exports = router;
