@@ -1,3 +1,5 @@
+console.log("🔥🔥🔥 LEARNING PATH CONTROLLER LOADED 🔥🔥🔥");
+
 const LearningPath = require("../models/LearningPath");
 const Course = require("../models/Course");
 const Lesson = require("../models/Lesson");
