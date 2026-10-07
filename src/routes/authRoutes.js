@@ -2,11 +2,12 @@ const express = require("express");
 
 const {
   register,
-    login,
+  login,
   getMe,
 } = require("../controllers/authController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
+
 const router = express.Router();
 
 /**
@@ -14,6 +15,11 @@ const router = express.Router();
  * /api/auth/register:
  *   post:
  *     summary: Register a new user
+ *     description: |
+ *       Access: PUBLIC
+ *
+ *       No authentication required.
+ *       Creates a new user account.
  *     tags: [Authentication]
  *     requestBody:
  *       required: true
@@ -55,6 +61,13 @@ router.post("/register", register);
  * /api/auth/login:
  *   post:
  *     summary: Login user
+ *     description: |
+ *       Access: PUBLIC
+ *
+ *       No authentication required.
+ *       Returns a JWT token after successful login.
+ *       The returned token must be used as Bearer Token
+ *       for protected APIs.
  *     tags: [Authentication]
  *     requestBody:
  *       required: true
@@ -89,6 +102,11 @@ router.post("/login", login);
  * /api/auth/me:
  *   get:
  *     summary: Get current authenticated user
+ *     description: |
+ *       Access: ALL AUTHENTICATED ROLES
+ *
+ *       Requires a valid JWT Bearer Token.
+ *       Available for CENTER_MANAGER, COACH, MEMBER and RECEPTIONIST.
  *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
