@@ -2,6 +2,10 @@ const LearningPath = require("../models/LearningPath");
 const Course = require("../models/Course");
 const Lesson = require("../models/Lesson");
 
+console.log("LearningPath runtime:", LearningPath);
+console.log("LearningPath type:", typeof LearningPath);
+console.log("LearningPath create:", typeof LearningPath?.create);
+
 const createLearningPath = async (req, res) => {
   try {
     const {
