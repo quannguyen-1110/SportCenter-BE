@@ -26,11 +26,13 @@ const createLearningPath = async (req, res) => {
       });
     }
 
-    const learningPath = await LearningPath.create({
-      courseId,
-      name: name.trim(),
-      description: description || "",
-    });
+    const learningPath = new LearningPath({
+  courseId,
+  name: name.trim(),
+  description: description || "",
+});
+
+await learningPath.save();
 
     return res.status(201).json({
       success: true,
