@@ -36,7 +36,6 @@ const createLearningPath = async (req, res) => {
   description: description || "",
 });
 
-await learningPath.save();
 
     return res.status(201).json({
       success: true,
