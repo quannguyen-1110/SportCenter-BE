@@ -30,7 +30,7 @@ const createLearningPath = async (req, res) => {
       });
     }
 
-    const learningPath = new LearningPath({
+    const learningPath = await LearningPath.create({
   courseId,
   name: name.trim(),
   description: description || "",
