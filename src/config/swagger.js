@@ -13,7 +13,7 @@ const options = {
 
     servers: [
       {
-        url: "http://sportcenter-be.onrender.com",
+        url: "https://sportcenter-be.onrender.com",
         description: "Local development server",
       },
     ],
