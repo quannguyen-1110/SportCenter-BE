@@ -13,7 +13,7 @@ const options = {
 
     servers: [
       {
-        url: "http://localhost:5000",
+        url: "http://sportcenter-be.onrender.com",
         description: "Local development server",
       },
     ],
@@ -79,6 +79,20 @@ const options = {
         name: "Courses",
         description: "Course management APIs"
       },
+      {
+        name: "Learning Paths",
+        description: "Learning path management APIs"
+      },
+      {
+        name: "Lessons",
+        description: "Lesson management APIs"
+      },
+      {
+        name: "Lesson Progress",
+        description: "Lesson progress management APIs"
+      },
+
+      
     ],
 
     components: {
