@@ -1,4 +1,6 @@
 const Schedule = require("../models/Schedule");
+const Member = require("../models/Member");
+const ClassRegistration = require("../models/ClassRegistration");
 
 // CREATE schedule
 const createSchedule = async (req, res) => {
@@ -89,6 +91,75 @@ const getSchedules = async (req, res) => {
     });
   } catch (error) {
     console.error("Get schedules error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// GET schedules of current member
+const getMySchedules = async (req, res) => {
+  try {
+    const member = await Member.findOne({
+      userId: req.user.userId,
+    });
+
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Member profile not found",
+      });
+    }
+
+    const registrations = await ClassRegistration.find({
+      memberId: member._id,
+      status: "CONFIRMED",
+    }).select("classId");
+
+    const classIds = registrations.map(
+      (registration) => registration.classId
+    );
+
+    const schedules = await Schedule.find({
+      classId: { $in: classIds },
+    })
+      .populate({
+        path: "classId",
+        select: "name subjectId courseId coachId",
+        populate: [
+          {
+            path: "subjectId",
+            select: "name",
+          },
+          {
+            path: "courseId",
+            select: "name description status",
+          },
+          {
+            path: "coachId",
+            select: "fullName phone",
+          },
+        ],
+      })
+      .populate({
+        path: "lessonId",
+        select:
+          "title description order learningPathId",
+      })
+      .sort({
+        date: 1,
+        startTime: 1,
+      });
+
+    return res.status(200).json({
+      success: true,
+      message: "My schedules retrieved successfully",
+      data: schedules,
+    });
+  } catch (error) {
+    console.error("Get my schedules error:", error);
 
     return res.status(500).json({
       success: false,
@@ -194,6 +265,7 @@ const deleteSchedule = async (req, res) => {
 module.exports = {
   createSchedule,
   getSchedules,
+  getMySchedules,
   updateSchedule,
   deleteSchedule,
 };

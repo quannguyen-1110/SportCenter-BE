@@ -3,6 +3,7 @@ const express = require("express");
 const {
   createSchedule,
   getSchedules,
+  getMySchedules,
   updateSchedule,
   deleteSchedule,
 } = require("../controllers/scheduleController");
@@ -17,6 +18,10 @@ const router = express.Router();
  * /api/schedules:
  *   post:
  *     summary: Create a schedule
+ *     description: |
+ *       Access: CENTER_MANAGER
+ *
+ *       Requires a valid JWT Bearer Token.
  *     tags: [Schedules]
  *     security:
  *       - bearerAuth: []
@@ -80,6 +85,10 @@ router.post(
  * /api/schedules:
  *   get:
  *     summary: Get all schedules
+ *     description: |
+ *       Access: ALL AUTHENTICATED ROLES
+ *
+ *       Requires a valid JWT Bearer Token.
  *     tags: [Schedules]
  *     security:
  *       - bearerAuth: []
@@ -99,9 +108,47 @@ router.get(
 
 /**
  * @swagger
+ * /api/schedules/my:
+ *   get:
+ *     summary: Get current member's schedules
+ *     description: |
+ *       Access: MEMBER
+ *
+ *       Returns schedules of classes where the current member
+ *       has a CONFIRMED class registration.
+ *
+ *       Requires a valid JWT Bearer Token.
+ *     tags: [Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Member schedules retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Member profile not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/my",
+  authMiddleware,
+  roleMiddleware("MEMBER"),
+  getMySchedules
+);
+
+/**
+ * @swagger
  * /api/schedules/{id}:
  *   put:
  *     summary: Update a schedule
+ *     description: |
+ *       Access: CENTER_MANAGER
+ *
+ *       Requires a valid JWT Bearer Token.
  *     tags: [Schedules]
  *     security:
  *       - bearerAuth: []
@@ -111,7 +158,7 @@ router.get(
  *         required: true
  *         schema:
  *           type: string
- *         example: 67abc1234567890123456789
+ *           example: 67abc1234567890123456789
  *     requestBody:
  *       required: true
  *       content:
@@ -174,6 +221,10 @@ router.put(
  * /api/schedules/{id}:
  *   delete:
  *     summary: Delete a schedule
+ *     description: |
+ *       Access: CENTER_MANAGER
+ *
+ *       Requires a valid JWT Bearer Token.
  *     tags: [Schedules]
  *     security:
  *       - bearerAuth: []
@@ -183,7 +234,7 @@ router.put(
  *         required: true
  *         schema:
  *           type: string
- *         example: 67abc1234567890123456789
+ *           example: 67abc1234567890123456789
  *     responses:
  *       200:
  *         description: Schedule deleted successfully
