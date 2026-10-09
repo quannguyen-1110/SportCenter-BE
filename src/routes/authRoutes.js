@@ -3,6 +3,7 @@ const express = require("express");
 const {
   register,
   login,
+  googleLogin,
   getMe,
 } = require("../controllers/authController");
 
@@ -119,5 +120,43 @@ router.post("/login", login);
  *         description: User not found
  */
 router.get("/me", authMiddleware, getMe);
+
+/**
+ * @swagger
+ * /api/auth/google:
+ *   post:
+ *     summary: Login or register with Google
+ *     description: |
+ *       Access: PUBLIC
+ *
+ *       Verifies a Google ID token and returns a SportCenter JWT.
+ *       New Google accounts are assigned the MEMBER role.
+ *       Send the Google ID token in the request body.
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - idToken
+ *             properties:
+ *               idToken:
+ *                 type: string
+ *                 description: Google ID token obtained by the frontend
+ *     responses:
+ *       200:
+ *         description: Google login successful
+ *       400:
+ *         description: Google ID token is required
+ *       401:
+ *         description: Google authentication failed
+ *       403:
+ *         description: Account is inactive
+ *       409:
+ *         description: An account with this email already exists
+ */
+router.post("/google", googleLogin);
 
 module.exports = router;
