@@ -5,12 +5,137 @@ const {
   getMembers,
   updateMember,
   deleteMember,
+  getMyProfile,
+  createMyProfile,
+  updateMyProfile,
 } = require("../controllers/memberController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/members/me:
+ *   get:
+ *     summary: Get my member profile
+ *     description: "Access: MEMBER"
+ *     tags: [Members]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Profile retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Only members can access this endpoint
+ *       404:
+ *         description: Profile not found
+ */
+router.get(
+  "/me",
+  authMiddleware,
+  roleMiddleware("MEMBER"),
+  getMyProfile
+);
+
+/**
+ * @swagger
+ * /api/members/me:
+ *   post:
+ *     summary: Create my member profile
+ *     description: "Access: MEMBER. userId is obtained from the JWT."
+ *     tags: [Members]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - fullName
+ *               - phone
+ *               - goal
+ *             properties:
+ *               fullName:
+ *                 type: string
+ *                 example: Nguyen Van A
+ *               phone:
+ *                 type: string
+ *                 example: "0901234567"
+ *               goal:
+ *                 type: string
+ *                 example: Weight loss
+ *               level:
+ *                 type: string
+ *                 enum: [BEGINNER, INTERMEDIATE, ADVANCED]
+ *                 example: BEGINNER
+ *     responses:
+ *       201:
+ *         description: Profile created successfully
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Only members can create their own profile
+ *       409:
+ *         description: Profile already exists
+ */
+router.post(
+  "/me",
+  authMiddleware,
+  roleMiddleware("MEMBER"),
+  createMyProfile
+);
+
+/**
+ * @swagger
+ * /api/members/me:
+ *   put:
+ *     summary: Update my member profile
+ *     description: "Access: MEMBER. Only the current user's profile can be updated."
+ *     tags: [Members]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fullName:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               goal:
+ *                 type: string
+ *               level:
+ *                 type: string
+ *                 enum: [BEGINNER, INTERMEDIATE, ADVANCED]
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Only members can update their own profile
+ *       404:
+ *         description: Profile not found
+ */
+router.put(
+  "/me",
+  authMiddleware,
+  roleMiddleware("MEMBER"),
+  updateMyProfile
+);
 
 /**
  * @swagger

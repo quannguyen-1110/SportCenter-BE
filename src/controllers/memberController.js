@@ -191,9 +191,190 @@ const deleteMember = async (req, res) => {
   }
 };
 
+
+ // GET my profile
+const getMyProfile = async (req, res) => {
+  try {
+    const member = await Member.findOne({
+      userId: req.user.userId,
+    });
+
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Member profile not found. Please create your profile.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: member,
+    });
+  } catch (error) {
+    console.error("Get my profile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// CREATE my profile
+const createMyProfile = async (req, res) => {
+  try {
+    const { fullName, phone, goal, level } = req.body;
+
+    if (!fullName?.trim() || !phone?.trim() || !goal?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "fullName, phone and goal are required",
+      });
+    }
+
+    const user = await User.findById(req.user.userId);
+
+    if (!user || user.role !== "MEMBER") {
+      return res.status(403).json({
+        success: false,
+        message: "Only members can create their own profile",
+      });
+    }
+
+    const existingMember = await Member.findOne({
+      userId: req.user.userId,
+    });
+
+    if (existingMember) {
+      return res.status(409).json({
+        success: false,
+        message: "Member profile already exists",
+      });
+    }
+
+    const validLevels = ["BEGINNER", "INTERMEDIATE", "ADVANCED"];
+
+    if (level && !validLevels.includes(level)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid member level",
+      });
+    }
+
+    const member = await Member.create({
+      userId: user._id,
+      fullName: fullName.trim(),
+      phone: phone.trim(),
+      goal: goal.trim(),
+      level: level || "BEGINNER",
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Member profile created successfully",
+      data: member,
+    });
+  } catch (error) {
+    console.error("Create my profile error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Member profile already exists",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// UPDATE my profile
+const updateMyProfile = async (req, res) => {
+  try {
+    const { fullName, phone, goal, level } = req.body;
+
+    if (
+      fullName !== undefined &&
+      (typeof fullName !== "string" || !fullName.trim())
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "fullName must not be empty",
+      });
+    }
+
+    if (
+      phone !== undefined &&
+      (typeof phone !== "string" || !phone.trim())
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "phone must not be empty",
+      });
+    }
+
+    if (
+      goal !== undefined &&
+      (typeof goal !== "string" || !goal.trim())
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "goal must not be empty",
+      });
+    }
+
+    const validLevels = ["BEGINNER", "INTERMEDIATE", "ADVANCED"];
+
+    if (level !== undefined && !validLevels.includes(level)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid member level",
+      });
+    }
+
+    const member = await Member.findOne({
+      userId: req.user.userId,
+    });
+
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Member profile not found. Please create your profile first.",
+      });
+    }
+
+    if (fullName !== undefined) member.fullName = fullName.trim();
+    if (phone !== undefined) member.phone = phone.trim();
+    if (goal !== undefined) member.goal = goal.trim();
+    if (level !== undefined) member.level = level;
+
+    await member.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Member profile updated successfully",
+      data: member,
+    });
+  } catch (error) {
+    console.error("Update my profile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+
 module.exports = {
   createMember,
   getMembers,
   updateMember,
   deleteMember,
+  getMyProfile,
+  createMyProfile,
+  updateMyProfile,
 };
