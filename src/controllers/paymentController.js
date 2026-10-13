@@ -1,18 +1,18 @@
 const Payment = require("../models/Payment");
 const ClassRegistration = require("../models/ClassRegistration");
+const Member = require("../models/Member");
+
 
 // CREATE payment
+
 const createPayment = async (req, res) => {
   try {
     const {
       classRegistrationId,
       amount,
       paymentMethod,
-      status,
-      paymentDate,
     } = req.body;
 
-    // Validate required fields
     if (
       !classRegistrationId ||
       amount === undefined ||
@@ -25,15 +25,17 @@ const createPayment = async (req, res) => {
       });
     }
 
-    // Validate amount
-    if (amount < 0) {
+    if (
+      typeof amount !== "number" ||
+      !Number.isFinite(amount) ||
+      amount < 0
+    ) {
       return res.status(400).json({
         success: false,
-        message: "amount must be >= 0",
+        message: "amount must be a valid number >= 0",
       });
     }
 
-    // Check class registration
     const classRegistration =
       await ClassRegistration.findById(classRegistrationId);
 
@@ -44,7 +46,6 @@ const createPayment = async (req, res) => {
       });
     }
 
-    // Check cancelled registration
     if (classRegistration.status === "CANCELLED") {
       return res.status(400).json({
         success: false,
@@ -53,7 +54,14 @@ const createPayment = async (req, res) => {
       });
     }
 
-    // Validate payment method
+    if (classRegistration.status === "CONFIRMED") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "This class registration is already confirmed",
+      });
+    }
+
     const validPaymentMethods = [
       "CASH",
       "BANK_TRANSFER",
@@ -68,58 +76,18 @@ const createPayment = async (req, res) => {
       });
     }
 
-    // Validate payment status
-    const validStatuses = [
-      "PENDING",
-      "SUCCESS",
-      "FAILED",
-    ];
-
-    const paymentStatus = status || "PENDING";
-
-    if (!validStatuses.includes(paymentStatus)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "status must be PENDING, SUCCESS or FAILED",
-      });
-    }
-
-    // Validate payment date
-    let paymentDateValue = null;
-
-    if (paymentDate) {
-      paymentDateValue = new Date(paymentDate);
-
-      if (Number.isNaN(paymentDateValue.getTime())) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid paymentDate",
-        });
-      }
-    }
-
-    // Create payment
+    // Never trust payment status or payment date sent by the client.
     const payment = await Payment.create({
       classRegistrationId,
       amount,
       paymentMethod,
-      status: paymentStatus,
-      paymentDate: paymentDateValue,
+      status: "PENDING",
+      paymentDate: null,
     });
-
-    // If payment is successful, confirm class registration
-    if (paymentStatus === "SUCCESS") {
-      classRegistration.status = "CONFIRMED";
-      await classRegistration.save();
-    }
 
     return res.status(201).json({
       success: true,
-      message:
-        paymentStatus === "SUCCESS"
-          ? "Payment successful and class registration confirmed"
-          : "Payment created successfully",
+      message: "Payment created successfully",
       data: {
         id: payment._id,
         classRegistrationId: payment.classRegistrationId,
@@ -176,10 +144,10 @@ const getPayments = async (req, res) => {
 };
 
 // UPDATE payment
+
 const updatePayment = async (req, res) => {
   try {
     const { id } = req.params;
-
     const {
       classRegistrationId,
       amount,
@@ -188,28 +156,6 @@ const updatePayment = async (req, res) => {
       paymentDate,
     } = req.body;
 
-    // Validate required fields
-    if (
-      !classRegistrationId ||
-      amount === undefined ||
-      !paymentMethod
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "classRegistrationId, amount and paymentMethod are required",
-      });
-    }
-
-    // Validate amount
-    if (amount < 0) {
-      return res.status(400).json({
-        success: false,
-        message: "amount must be >= 0",
-      });
-    }
-
-    // Check payment
     const payment = await Payment.findById(id);
 
     if (!payment) {
@@ -219,9 +165,31 @@ const updatePayment = async (req, res) => {
       });
     }
 
-    // Check class registration
+    // Payment status must only be changed by the mock simulation endpoint.
+    if (status !== undefined || paymentDate !== undefined) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Payment status and paymentDate cannot be changed through this endpoint",
+      });
+    }
+
+    // Do not allow changing the registration associated with a payment.
+    if (
+      classRegistrationId !== undefined &&
+      classRegistrationId.toString() !==
+        payment.classRegistrationId.toString()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot change classRegistrationId",
+      });
+    }
+
     const classRegistration =
-      await ClassRegistration.findById(classRegistrationId);
+      await ClassRegistration.findById(
+        payment.classRegistrationId
+      );
 
     if (!classRegistration) {
       return res.status(404).json({
@@ -230,7 +198,6 @@ const updatePayment = async (req, res) => {
       });
     }
 
-    // Cannot pay for cancelled registration
     if (classRegistration.status === "CANCELLED") {
       return res.status(400).json({
         success: false,
@@ -239,14 +206,37 @@ const updatePayment = async (req, res) => {
       });
     }
 
-    // Validate payment method
+    if (payment.status !== "PENDING") {
+      return res.status(400).json({
+        success: false,
+        message: "Only pending payments can be updated",
+      });
+    }
+
+    if (
+      amount !== undefined &&
+      (
+        typeof amount !== "number" ||
+        !Number.isFinite(amount) ||
+        amount < 0
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "amount must be a valid number >= 0",
+      });
+    }
+
     const validPaymentMethods = [
       "CASH",
       "BANK_TRANSFER",
       "ONLINE",
     ];
 
-    if (!validPaymentMethods.includes(paymentMethod)) {
+    if (
+      paymentMethod !== undefined &&
+      !validPaymentMethods.includes(paymentMethod)
+    ) {
       return res.status(400).json({
         success: false,
         message:
@@ -254,72 +244,27 @@ const updatePayment = async (req, res) => {
       });
     }
 
-    // Validate payment status
-    const validStatuses = [
-      "PENDING",
-      "SUCCESS",
-      "FAILED",
-    ];
-
-    const paymentStatus = status || payment.status;
-
-    if (!validStatuses.includes(paymentStatus)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "status must be PENDING, SUCCESS or FAILED",
-      });
+    if (amount !== undefined) {
+      payment.amount = amount;
     }
 
-    // Validate payment date
-    let paymentDateValue = payment.paymentDate;
-
-    if (paymentDate) {
-      paymentDateValue = new Date(paymentDate);
-
-      if (Number.isNaN(paymentDateValue.getTime())) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid paymentDate",
-        });
-      }
+    if (paymentMethod !== undefined) {
+      payment.paymentMethod = paymentMethod;
     }
-
-    // Update payment
-    payment.classRegistrationId =
-      classRegistrationId;
-    payment.amount = amount;
-    payment.paymentMethod = paymentMethod;
-    payment.status = paymentStatus;
-    payment.paymentDate = paymentDateValue;
 
     await payment.save();
-
-    // Update registration status
-    if (paymentStatus === "SUCCESS") {
-      classRegistration.status = "CONFIRMED";
-      await classRegistration.save();
-    } else if (
-      paymentStatus === "PENDING" ||
-      paymentStatus === "FAILED"
-    ) {
-      classRegistration.status = "PENDING_PAYMENT";
-      await classRegistration.save();
-    }
 
     return res.status(200).json({
       success: true,
       message: "Payment updated successfully",
       data: {
         id: payment._id,
-        classRegistrationId:
-          payment.classRegistrationId,
+        classRegistrationId: payment.classRegistrationId,
         amount: payment.amount,
         paymentMethod: payment.paymentMethod,
         status: payment.status,
         paymentDate: payment.paymentDate,
-        registrationStatus:
-          classRegistration.status,
+        registrationStatus: classRegistration.status,
         updatedAt: payment.updatedAt,
       },
     });
@@ -333,12 +278,41 @@ const updatePayment = async (req, res) => {
   }
 };
 
-// DELETE payment
-const deletePayment = async (req, res) => {
-  try {
-    const { id } = req.params;
 
-    // Check payment
+
+
+
+const simulatePaymentResult = async (req, res) => {
+  try {
+    if (process.env.PAYMENT_MODE !== "mock") {
+      return res.status(403).json({
+        success: false,
+        message: "Mock payment mode is disabled",
+      });
+    }
+
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!["SUCCESS", "FAILED"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "status must be SUCCESS or FAILED",
+      });
+    }
+
+    // Find the logged-in member's profile
+    const member = await Member.findOne({
+      userId: req.user.userId,
+    });
+
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Member profile not found",
+      });
+    }
+
     const payment = await Payment.findById(id);
 
     if (!payment) {
@@ -348,14 +322,60 @@ const deletePayment = async (req, res) => {
       });
     }
 
-    await Payment.findByIdAndDelete(id);
+    if (payment.status !== "PENDING") {
+      return res.status(400).json({
+        success: false,
+        message: "Only pending payments can be simulated",
+      });
+    }
+
+    const registration = await ClassRegistration.findById(
+      payment.classRegistrationId
+    );
+
+    if (!registration) {
+      return res.status(404).json({
+        success: false,
+        message: "Class registration not found",
+      });
+    }
+
+    // A member can only simulate their own registration
+    if (registration.memberId.toString() !== member._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You cannot access this payment",
+      });
+    }
+
+    if (registration.status === "CANCELLED") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot pay for a cancelled registration",
+      });
+    }
+
+    payment.status = status;
+
+    if (status === "SUCCESS") {
+      payment.paymentDate = new Date();
+      registration.status = "CONFIRMED";
+    }
+
+    await payment.save();
+    await registration.save();
 
     return res.status(200).json({
       success: true,
-      message: "Payment deleted successfully",
+      message: `Mock payment ${status.toLowerCase()}`,
+      data: {
+        paymentId: payment._id,
+        paymentStatus: payment.status,
+        registrationStatus: registration.status,
+      },
     });
   } catch (error) {
-    console.error("Delete payment error:", error);
+    console.error("Simulate payment error:", error);
 
     return res.status(500).json({
       success: false,
@@ -364,9 +384,10 @@ const deletePayment = async (req, res) => {
   }
 };
 
+
 module.exports = {
   createPayment,
   getPayments,
   updatePayment,
-  deletePayment,
+  simulatePaymentResult,
 };

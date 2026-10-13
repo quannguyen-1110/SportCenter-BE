@@ -4,6 +4,7 @@ const {
   createPayment,
   getPayments,
   updatePayment,
+  simulatePaymentResult,
 } = require("../controllers/paymentController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -168,6 +169,51 @@ router.put(
     "CENTER_MANAGER"
   ),
   updatePayment
+);
+
+/**
+ * @swagger
+ * /api/payments/{id}/simulate:
+ *   post:
+ *     summary: Simulate a mock payment result (demo only)
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Payment ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [SUCCESS, FAILED]
+ *                 example: SUCCESS
+ *     responses:
+ *       200:
+ *         description: Mock payment result simulated
+ *       400:
+ *         description: Invalid status or payment cannot be simulated
+ *       403:
+ *         description: Mock mode is disabled
+ *       404:
+ *         description: Payment not found
+ */
+router.post(
+  "/:id/simulate",
+  authMiddleware,
+  roleMiddleware("MEMBER"),
+  simulatePaymentResult
 );
 
 module.exports = router;
