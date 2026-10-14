@@ -76,8 +76,8 @@ const login = async (req, res) => {
     }
 
     const user = await User.findOne({
-      email: email.toLowerCase().trim(),
-    });
+  email: email.toLowerCase().trim(),
+}).select("+passwordHash");
 
     if (!user) {
       return res.status(401).json({
