@@ -28,6 +28,11 @@ googleId: {
   sparse: true,
 },
 
+googleOtpVerified: {
+  type: Boolean,
+  default: false,
+},
+
     role: {
       type: String,
       required: true,

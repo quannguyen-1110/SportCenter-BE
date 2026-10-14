@@ -2,6 +2,10 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const { OAuth2Client } = require("google-auth-library");
+const {
+  sendOTP,
+  verifyOTP,
+} = require("../services/otpService");
 
 const googleClient = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID
@@ -139,6 +143,7 @@ const login = async (req, res) => {
   }
 };
 
+
 const googleLogin = async (req, res) => {
   try {
     const { idToken } = req.body;
@@ -175,10 +180,9 @@ const googleLogin = async (req, res) => {
     let user = await User.findOne({ googleId });
 
     if (!user) {
-      user = await User.findOne({ email });
+      const existingUser = await User.findOne({ email });
 
-      if (user) {
-        // Do not automatically link a local account to Google.
+      if (existingUser) {
         return res.status(409).json({
           success: false,
           message:
@@ -191,6 +195,7 @@ const googleLogin = async (req, res) => {
         googleId,
         authProvider: "GOOGLE",
         role: "MEMBER",
+        googleOtpVerified: false,
       });
     }
 
@@ -208,6 +213,30 @@ const googleLogin = async (req, res) => {
       });
     }
 
+    if (!user.googleOtpVerified) {
+  await sendOTP(email);
+
+  const challengeToken = jwt.sign(
+    {
+      purpose: "GOOGLE_OTP_VERIFICATION",
+      userId: user._id.toString(),
+      email: user.email,
+    },
+    process.env.GOOGLE_OTP_CHALLENGE_SECRET,
+    { expiresIn: "5m" }
+  );
+
+  return res.status(200).json({
+    success: true,
+    requiresOTP: true,
+    message: "OTP has been sent to your Google email",
+    data: {
+      email: user.email,
+      challengeToken,
+    },
+  });
+}
+
     const token = jwt.sign(
       {
         userId: user._id,
@@ -221,6 +250,7 @@ const googleLogin = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      requiresOTP: false,
       message: "Google login successful",
       data: {
         token,
@@ -235,12 +265,139 @@ const googleLogin = async (req, res) => {
   } catch (error) {
     console.error("Google login error:", error);
 
-    return res.status(401).json({
+    if (error.message === "Please wait before requesting another OTP") {
+      return res.status(429).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message: "Google authentication failed",
+      message: "Unable to complete Google login",
     });
   }
 };
+
+
+const verifyGoogleOTP = async (req, res) => {
+  try {
+    const { challengeToken, otp } = req.body;
+
+    if (!challengeToken || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Challenge token and OTP are required",
+      });
+    }
+
+    if (!/^\d{6}$/.test(String(otp))) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP must contain 6 digits",
+      });
+    }
+
+    let challenge;
+
+    try {
+      challenge = jwt.verify(
+        challengeToken,
+        process.env.GOOGLE_OTP_CHALLENGE_SECRET
+      );
+    } catch (error) {
+      return res.status(401).json({
+        success: false,
+        message: "Challenge token is invalid or expired",
+      });
+    }
+
+    if (
+      challenge.purpose !== "GOOGLE_OTP_VERIFICATION" ||
+      !challenge.userId ||
+      !challenge.email
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid OTP verification challenge",
+      });
+    }
+
+    const normalizedEmail = challenge.email.toLowerCase().trim();
+
+    const user = await User.findOne({
+      _id: challenge.userId,
+      email: normalizedEmail,
+      googleId: { $exists: true, $ne: null },
+      authProvider: "GOOGLE",
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Google account not found",
+      });
+    }
+
+    if (user.status !== "ACTIVE") {
+      return res.status(403).json({
+        success: false,
+        message: "Account is inactive",
+      });
+    }
+
+    await verifyOTP(normalizedEmail, String(otp));
+
+    user.googleOtpVerified = true;
+    await user.save();
+
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "OTP verified. Google login successful",
+      data: {
+        token,
+        user: {
+          id: user._id,
+          email: user.email,
+          role: user.role,
+          status: user.status,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Verify Google OTP error:", error.message);
+
+    const knownErrors = [
+      "OTP is invalid or expired",
+      "OTP is incorrect",
+      "Too many incorrect attempts. Request a new OTP",
+    ];
+
+    if (knownErrors.includes(error.message)) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to verify OTP",
+    });
+  }
+};
+
 
 const getMe = async (req, res) => {
   try {
@@ -276,5 +433,6 @@ module.exports = {
   register,
   login,
   googleLogin,
+  verifyGoogleOTP,
   getMe,
 };

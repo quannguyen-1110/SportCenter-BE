@@ -1,15 +1,18 @@
+
 const express = require("express");
 
 const {
   register,
   login,
   googleLogin,
+  verifyGoogleOTP,
   getMe,
 } = require("../controllers/authController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 
 const router = express.Router();
+
 
 /**
  * @swagger
@@ -158,5 +161,38 @@ router.get("/me", authMiddleware, getMe);
  *         description: An account with this email already exists
  */
 router.post("/google", googleLogin);
+
+/**
+ * @swagger
+ * /api/auth/google/verify-otp:
+ *   post:
+ *     summary: Verify OTP for first Google login
+ *     tags:
+ *       - Authentication
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+  type: object
+  required:
+    - challengeToken
+    - otp
+  properties:
+    challengeToken:
+      type: string
+      description: Challenge token returned by Google login
+    otp:
+      type: string
+      example: "123456"
+ *     responses:
+ *       200:
+ *         description: OTP verified and login successful
+ *       400:
+ *         description: Invalid or expired OTP
+ *       500:
+ *         description: Server error
+ */ 
+router.post("/google/verify-otp", verifyGoogleOTP);
 
 module.exports = router;
