@@ -77,7 +77,7 @@ router.get(
 router.post(
   "/",
   authMiddleware,
-  roleMiddleware("COACH", "MEMBER"),
+  roleMiddleware("COACH"),
   createWorkoutResult
 );
 
@@ -134,7 +134,7 @@ router.post(
 router.put(
   "/:id",
   authMiddleware,
-  roleMiddleware("COACH", "MEMBER"),
+  roleMiddleware("COACH"),
   updateWorkoutResult
 );
 

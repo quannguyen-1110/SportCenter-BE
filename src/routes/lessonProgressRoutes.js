@@ -1,3 +1,4 @@
+
 const express = require("express");
 
 const {
@@ -15,7 +16,7 @@ const router = express.Router();
  * @swagger
  * /api/lesson-progress:
  *   get:
- *     summary: Get all lesson progress
+ *     summary: Get lesson progress based on user role
  *     tags: [Lesson Progress]
  *     security:
  *       - bearerAuth: []
@@ -24,12 +25,10 @@ const router = express.Router();
  *         description: Lesson progress retrieved successfully
  *       401:
  *         description: Authentication required
+ *       403:
+ *         description: Access denied
  */
-router.get(
-  "/",
-  authMiddleware,
-  getLessonProgress
-);
+router.get("/", authMiddleware, getLessonProgress);
 
 /**
  * @swagger
@@ -48,6 +47,7 @@ router.get(
  *             required:
  *               - memberId
  *               - lessonId
+ *               - classId
  *             properties:
  *               memberId:
  *                 type: string
@@ -55,12 +55,12 @@ router.get(
  *               lessonId:
  *                 type: string
  *                 example: 67def1234567890123456789
+ *               classId:
+ *                 type: string
+ *                 example: 67fed1234567890123456789
  *               status:
  *                 type: string
- *                 enum:
- *                   - NOT_STARTED
- *                   - IN_PROGRESS
- *                   - COMPLETED
+ *                 enum: [NOT_STARTED, IN_PROGRESS, COMPLETED]
  *                 example: IN_PROGRESS
  *     responses:
  *       201:
@@ -72,18 +72,14 @@ router.get(
  *       403:
  *         description: Access denied
  *       404:
- *         description: Member or lesson not found
+ *         description: Member, lesson, or class not found
  *       409:
  *         description: Lesson progress already exists
  */
 router.post(
   "/",
   authMiddleware,
-  roleMiddleware(
-    "MEMBER",
-    "COACH",
-    "CENTER_MANAGER"
-  ),
+  roleMiddleware("MEMBER", "COACH", "CENTER_MANAGER"),
   createLessonProgress
 );
 
@@ -91,7 +87,7 @@ router.post(
  * @swagger
  * /api/lesson-progress/{id}:
  *   put:
- *     summary: Update lesson progress
+ *     summary: Update lesson progress or coach evaluation
  *     tags: [Lesson Progress]
  *     security:
  *       - bearerAuth: []
@@ -108,24 +104,14 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - memberId
- *               - lessonId
- *               - status
  *             properties:
- *               memberId:
- *                 type: string
- *                 example: 67abc1234567890123456789
- *               lessonId:
- *                 type: string
- *                 example: 67def1234567890123456789
  *               status:
  *                 type: string
- *                 enum:
- *                   - NOT_STARTED
- *                   - IN_PROGRESS
- *                   - COMPLETED
+ *                 enum: [NOT_STARTED, IN_PROGRESS, COMPLETED]
  *                 example: COMPLETED
+ *               coachComment:
+ *                 type: string
+ *                 example: Student has improved their technique and consistency.
  *     responses:
  *       200:
  *         description: Lesson progress updated successfully
@@ -136,18 +122,12 @@ router.post(
  *       403:
  *         description: Access denied
  *       404:
- *         description: Lesson progress, Member or Lesson not found
- *       409:
- *         description: Lesson progress already exists
+ *         description: Lesson progress not found
  */
 router.put(
   "/:id",
   authMiddleware,
-  roleMiddleware(
-    "MEMBER",
-    "COACH",
-    "CENTER_MANAGER"
-  ),
+  roleMiddleware("MEMBER", "COACH", "CENTER_MANAGER"),
   updateLessonProgress
 );
 

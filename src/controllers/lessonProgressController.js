@@ -1,43 +1,75 @@
+
+const mongoose = require("mongoose");
 const LessonProgress = require("../models/LessonProgress");
 const Member = require("../models/Member");
 const Lesson = require("../models/Lesson");
+const Coach = require("../models/Coach");
+const Class = require("../models/Class");
+const ClassRegistration = require("../models/ClassRegistration");
+const LearningPath = require("../models/LearningPath");
+
+const VALID_STATUSES = [
+  "NOT_STARTED",
+  "IN_PROGRESS",
+  "COMPLETED",
+];
+
+// Check whether a member has confirmed registration
+// in a class assigned to the specified coach.
+const coachCanAccessProgress = async (coachId, memberId, classId) => {
+  const assignedClass = await Class.findOne({
+    _id: classId,
+    coachId,
+  });
+
+  if (!assignedClass) return false;
+
+  const registration = await ClassRegistration.findOne({
+    classId,
+    memberId,
+    status: "CONFIRMED",
+  });
+
+  return Boolean(registration);
+};
 
 // CREATE lesson progress
 const createLessonProgress = async (req, res) => {
   try {
-    const {
-      memberId,
-      lessonId,
-      status,
-    } = req.body;
+    const { memberId, lessonId, classId, status } = req.body;
 
-    // Validate required fields
-    if (!memberId || !lessonId) {
+    if (!memberId || !lessonId || !classId) {
       return res.status(400).json({
         success: false,
-        message: "memberId and lessonId are required",
+        message: "memberId, lessonId and classId are required",
       });
     }
 
-    // Validate status
-    const validStatuses = [
-      "NOT_STARTED",
-      "IN_PROGRESS",
-      "COMPLETED",
-    ];
+    if (
+      !mongoose.isValidObjectId(memberId) ||
+      !mongoose.isValidObjectId(lessonId) ||
+      !mongoose.isValidObjectId(classId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid memberId, lessonId or classId",
+      });
+    }
 
     const progressStatus = status || "NOT_STARTED";
 
-    if (!validStatuses.includes(progressStatus)) {
+    if (!VALID_STATUSES.includes(progressStatus)) {
       return res.status(400).json({
         success: false,
-        message:
-          "status must be NOT_STARTED, IN_PROGRESS or COMPLETED",
+        message: "Invalid progress status",
       });
     }
 
-    // Check member
-    const member = await Member.findById(memberId);
+    const [member, lesson, assignedClass] = await Promise.all([
+      Member.findById(memberId),
+      Lesson.findById(lessonId),
+      Class.findById(classId),
+    ]);
 
     if (!member) {
       return res.status(404).json({
@@ -46,9 +78,6 @@ const createLessonProgress = async (req, res) => {
       });
     }
 
-    // Check lesson
-    const lesson = await Lesson.findById(lessonId);
-
     if (!lesson) {
       return res.status(404).json({
         success: false,
@@ -56,52 +85,112 @@ const createLessonProgress = async (req, res) => {
       });
     }
 
-    // Check existing progress
-    const existingProgress =
-      await LessonProgress.findOne({
-        memberId,
-        lessonId,
+    if (!assignedClass) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found",
       });
+    }
+
+    // The lesson must belong to the course used by this class.
+    const learningPath = await LearningPath.findById(
+      lesson.learningPathId
+    );
+
+    if (
+      !learningPath ||
+      learningPath.courseId.toString() !== assignedClass.courseId.toString()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Lesson does not belong to this class's course",
+      });
+    }
+
+    if (req.user.role === "MEMBER") {
+      const ownMember = await Member.findOne({
+        userId: req.user.userId,
+      });
+
+      if (!ownMember || ownMember._id.toString() !== memberId) {
+        return res.status(403).json({
+          success: false,
+          message: "You can only create your own lesson progress",
+        });
+      }
+
+      const registration = await ClassRegistration.findOne({
+        classId,
+        memberId,
+        status: "CONFIRMED",
+      });
+
+      if (!registration) {
+        return res.status(403).json({
+          success: false,
+          message: "You must have a confirmed class registration",
+        });
+      }
+    } else if (req.user.role === "COACH") {
+      const coach = await Coach.findOne({
+        userId: req.user.userId,
+      });
+
+      if (!coach) {
+        return res.status(404).json({
+          success: false,
+          message: "Coach profile not found",
+        });
+      }
+
+      const allowed = await coachCanAccessProgress(
+        coach._id,
+        memberId,
+        classId
+      );
+
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          message: "You can only manage members in your assigned classes",
+        });
+      }
+    } else if (req.user.role !== "CENTER_MANAGER") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
+    }
+
+    const existingProgress = await LessonProgress.findOne({
+      memberId,
+      lessonId,
+      classId,
+    });
 
     if (existingProgress) {
       return res.status(409).json({
         success: false,
-        message:
-          "Lesson progress already exists for this member",
+        message: "Lesson progress already exists for this member and class",
       });
     }
 
-    // Set completedAt when completed
-    const completedAt =
-      progressStatus === "COMPLETED"
-        ? new Date()
-        : null;
-
-    // Create progress
     const progress = await LessonProgress.create({
       memberId,
       lessonId,
+      classId,
       status: progressStatus,
-      completedAt,
+      completedAt:
+        progressStatus === "COMPLETED" ? new Date() : null,
     });
 
     return res.status(201).json({
       success: true,
       message: "Lesson progress created successfully",
-      data: {
-        id: progress._id,
-        memberId: progress.memberId,
-        lessonId: progress.lessonId,
-        status: progress.status,
-        completedAt: progress.completedAt,
-        createdAt: progress.createdAt,
-      },
+      data: progress,
     });
   } catch (error) {
-    console.error(
-      "Create lesson progress error:",
-      error
-    );
+    console.error("Create lesson progress error:", error);
 
     return res.status(500).json({
       success: false,
@@ -110,30 +199,63 @@ const createLessonProgress = async (req, res) => {
   }
 };
 
-// GET all lesson progress
+// GET lesson progress based on role
 const getLessonProgress = async (req, res) => {
   try {
-    const lessonProgress = await LessonProgress.find()
-      .populate(
-        "memberId",
-        "fullName phone goal level"
-      )
-      .populate(
-        "lessonId",
-        "title description order learningPathId"
-      )
+    let filter = {};
+
+    if (req.user.role === "MEMBER") {
+      const member = await Member.findOne({
+        userId: req.user.userId,
+      });
+
+      if (!member) {
+        return res.status(404).json({
+          success: false,
+          message: "Member profile not found",
+        });
+      }
+
+      filter.memberId = member._id;
+    } else if (req.user.role === "COACH") {
+      const coach = await Coach.findOne({
+        userId: req.user.userId,
+      });
+
+      if (!coach) {
+        return res.status(404).json({
+          success: false,
+          message: "Coach profile not found",
+        });
+      }
+
+      const classes = await Class.find({
+        coachId: coach._id,
+      }).select("_id");
+
+      filter.classId = {
+        $in: classes.map((item) => item._id),
+      };
+    } else if (req.user.role !== "CENTER_MANAGER") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
+    }
+
+    const progressList = await LessonProgress.find(filter)
+      .populate("memberId", "fullName phone goal level")
+      .populate("lessonId", "title description order learningPathId")
+      .populate("classId", "name courseId coachId")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
       message: "Lesson progress retrieved successfully",
-      data: lessonProgress,
+      data: progressList,
     });
   } catch (error) {
-    console.error(
-      "Get lesson progress error:",
-      error
-    );
+    console.error("Get lesson progress error:", error);
 
     return res.status(500).json({
       success: false,
@@ -142,44 +264,31 @@ const getLessonProgress = async (req, res) => {
   }
 };
 
-// UPDATE lesson progress
+// UPDATE lesson progress or coach evaluation
 const updateLessonProgress = async (req, res) => {
   try {
     const { id } = req.params;
+    const { memberId, lessonId, classId, status, coachComment } = req.body;
 
-    const {
-      memberId,
-      lessonId,
-      status,
-    } = req.body;
-
-    // Validate required fields
-    if (!memberId || !lessonId || !status) {
+    if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
-        message:
-          "memberId, lessonId and status are required",
+        message: "Invalid lesson progress ID",
       });
     }
 
-    // Validate status
-    const validStatuses = [
-      "NOT_STARTED",
-      "IN_PROGRESS",
-      "COMPLETED",
-    ];
-
-    if (!validStatuses.includes(status)) {
+    if (
+      memberId !== undefined ||
+      lessonId !== undefined ||
+      classId !== undefined
+    ) {
       return res.status(400).json({
         success: false,
-        message:
-          "status must be NOT_STARTED, IN_PROGRESS or COMPLETED",
+        message: "memberId, lessonId and classId cannot be changed",
       });
     }
 
-    // Check progress
-    const progress =
-      await LessonProgress.findById(id);
+    const progress = await LessonProgress.findById(id);
 
     if (!progress) {
       return res.status(404).json({
@@ -188,51 +297,136 @@ const updateLessonProgress = async (req, res) => {
       });
     }
 
-    // Check member
-    const member = await Member.findById(memberId);
-
-    if (!member) {
-      return res.status(404).json({
-        success: false,
-        message: "Member not found",
-      });
-    }
-
-    // Check lesson
-    const lesson = await Lesson.findById(lessonId);
-
-    if (!lesson) {
-      return res.status(404).json({
-        success: false,
-        message: "Lesson not found",
-      });
-    }
-
-    // Check duplicate progress
-    const existingProgress =
-      await LessonProgress.findOne({
-        memberId,
-        lessonId,
-        _id: { $ne: id },
+    if (req.user.role === "MEMBER") {
+      const member = await Member.findOne({
+        userId: req.user.userId,
       });
 
-    if (existingProgress) {
-      return res.status(409).json({
-        success: false,
-        message:
-          "Lesson progress already exists for this member",
+      if (
+        !member ||
+        progress.memberId.toString() !== member._id.toString()
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "You can only update your own lesson progress",
+        });
+      }
+
+      if (coachComment !== undefined) {
+        return res.status(403).json({
+          success: false,
+          message: "Members cannot edit coach evaluations",
+        });
+      }
+
+      if (!VALID_STATUSES.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: "A valid status is required",
+        });
+      }
+
+      const registration = await ClassRegistration.findOne({
+        classId: progress.classId,
+        memberId: progress.memberId,
+        status: "CONFIRMED",
       });
-    }
 
-    // Update progress
-    progress.memberId = memberId;
-    progress.lessonId = lessonId;
-    progress.status = status;
+      if (!registration) {
+        return res.status(403).json({
+          success: false,
+          message: "Confirmed class registration required",
+        });
+      }
 
-    if (status === "COMPLETED") {
-      progress.completedAt = new Date();
+      progress.status = status;
+      progress.completedAt =
+        status === "COMPLETED"
+          ? progress.completedAt || new Date()
+          : null;
+    } else if (req.user.role === "COACH") {
+      const coach = await Coach.findOne({
+        userId: req.user.userId,
+      });
+
+      if (!coach) {
+        return res.status(404).json({
+          success: false,
+          message: "Coach profile not found",
+        });
+      }
+
+      const allowed = await coachCanAccessProgress(
+        coach._id,
+        progress.memberId,
+        progress.classId
+      );
+
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          message: "You cannot evaluate members outside your assigned classes",
+        });
+      }
+
+      if (status !== undefined) {
+        if (!VALID_STATUSES.includes(status)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid progress status",
+          });
+        }
+
+        progress.status = status;
+        progress.completedAt =
+          status === "COMPLETED"
+            ? progress.completedAt || new Date()
+            : null;
+      }
+
+      if (coachComment !== undefined) {
+        if (typeof coachComment !== "string") {
+          return res.status(400).json({
+            success: false,
+            message: "coachComment must be a string",
+          });
+        }
+
+        progress.coachComment = coachComment.trim();
+        progress.evaluatedAt = new Date();
+      }
+
+      if (status === undefined && coachComment === undefined) {
+        return res.status(400).json({
+          success: false,
+          message: "Provide status or coachComment",
+        });
+      }
+    } else if (req.user.role === "CENTER_MANAGER") {
+      if (coachComment !== undefined) {
+        return res.status(403).json({
+          success: false,
+          message: "Only coaches can submit coach evaluations",
+        });
+      }
+
+      if (!VALID_STATUSES.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: "A valid status is required",
+        });
+      }
+
+      progress.status = status;
+      progress.completedAt =
+        status === "COMPLETED"
+          ? progress.completedAt || new Date()
+          : null;
     } else {
-      progress.completedAt = null;
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
     }
 
     await progress.save();
@@ -243,10 +437,7 @@ const updateLessonProgress = async (req, res) => {
       data: progress,
     });
   } catch (error) {
-    console.error(
-      "Update lesson progress error:",
-      error
-    );
+    console.error("Update lesson progress error:", error);
 
     return res.status(500).json({
       success: false,

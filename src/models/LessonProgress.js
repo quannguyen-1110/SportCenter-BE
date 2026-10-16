@@ -1,3 +1,4 @@
+
 const mongoose = require("mongoose");
 
 const lessonProgressSchema = new mongoose.Schema(
@@ -14,6 +15,12 @@ const lessonProgressSchema = new mongoose.Schema(
       required: true,
     },
 
+    classId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Class",
+      required: true,
+    },
+
     status: {
       type: String,
       enum: ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"],
@@ -24,6 +31,17 @@ const lessonProgressSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    coachComment: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    evaluatedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -31,13 +49,9 @@ const lessonProgressSchema = new mongoose.Schema(
   }
 );
 
-// Một member chỉ có một progress cho một lesson
 lessonProgressSchema.index(
-  { memberId: 1, lessonId: 1 },
+  { memberId: 1, lessonId: 1, classId: 1 },
   { unique: true }
 );
 
-module.exports = mongoose.model(
-  "LessonProgress",
-  lessonProgressSchema
-);
+module.exports = mongoose.model("LessonProgress", lessonProgressSchema);
