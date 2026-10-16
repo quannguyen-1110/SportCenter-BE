@@ -1,3 +1,4 @@
+
 const express = require("express");
 
 const {
@@ -22,7 +23,8 @@ const router = express.Router();
  *     description: |
  *       Access: CENTER_MANAGER
  *
- *       Requires a valid JWT Bearer Token.
+ *       Each schedule must specify a room.
+ *       A room cannot have overlapping non-cancelled schedules.
  *     tags: [Schedules]
  *     security:
  *       - bearerAuth: []
@@ -35,6 +37,7 @@ const router = express.Router();
  *             required:
  *               - classId
  *               - lessonId
+ *               - roomId
  *               - date
  *               - startTime
  *               - endTime
@@ -45,10 +48,14 @@ const router = express.Router();
  *               lessonId:
  *                 type: string
  *                 example: 67def1234567890123456789
+ *               roomId:
+ *                 type: string
+ *                 description: ID of the room assigned to this schedule
+ *                 example: 67fed1234567890123456789
  *               date:
  *                 type: string
  *                 format: date
- *                 example: 2026-10-01
+ *                 example: "2026-10-19"
  *               startTime:
  *                 type: string
  *                 example: "08:00"
@@ -57,20 +64,21 @@ const router = express.Router();
  *                 example: "10:00"
  *               status:
  *                 type: string
- *                 enum:
- *                   - SCHEDULED
- *                   - COMPLETED
- *                   - CANCELLED
+ *                 enum: [SCHEDULED, COMPLETED, CANCELLED]
  *                 example: SCHEDULED
  *     responses:
  *       201:
  *         description: Schedule created successfully
  *       400:
- *         description: Required fields are missing
+ *         description: Invalid data, missing required fields, or inactive room
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
+ *       404:
+ *         description: Class, lesson, or room not found
+ *       409:
+ *         description: The room already has an overlapping schedule
  *       500:
  *         description: Internal server error
  */
@@ -89,7 +97,7 @@ router.post(
  *     description: |
  *       Access: ALL AUTHENTICATED ROLES
  *
- *       Requires a valid JWT Bearer Token.
+ *       Returns schedules with class, lesson, coach and room details.
  *     tags: [Schedules]
  *     security:
  *       - bearerAuth: []
@@ -101,11 +109,7 @@ router.post(
  *       500:
  *         description: Internal server error
  */
-router.get(
-  "/",
-  authMiddleware,
-  getSchedules
-);
+router.get("/", authMiddleware, getSchedules);
 
 /**
  * @swagger
@@ -115,10 +119,8 @@ router.get(
  *     description: |
  *       Access: MEMBER
  *
- *       Returns schedules of classes where the current member
- *       has a CONFIRMED class registration.
- *
- *       Requires a valid JWT Bearer Token.
+ *       Returns schedules for classes where the member has a
+ *       CONFIRMED registration, including room information.
  *     tags: [Schedules]
  *     security:
  *       - bearerAuth: []
@@ -140,6 +142,7 @@ router.get(
   roleMiddleware("MEMBER"),
   getMySchedules
 );
+
 /**
  * @swagger
  * /api/schedules/coach/my:
@@ -148,10 +151,8 @@ router.get(
  *     description: |
  *       Access: COACH
  *
- *       Returns schedules for classes assigned to the
- *       currently authenticated coach.
- *
- *       Requires a valid JWT Bearer Token.
+ *       Returns schedules for classes assigned to the authenticated
+ *       coach, including room information.
  *     tags: [Schedules]
  *     security:
  *       - bearerAuth: []
@@ -173,6 +174,7 @@ router.get(
   roleMiddleware("COACH"),
   getMyCoachSchedules
 );
+
 /**
  * @swagger
  * /api/schedules/{id}:
@@ -181,7 +183,8 @@ router.get(
  *     description: |
  *       Access: CENTER_MANAGER
  *
- *       Requires a valid JWT Bearer Token.
+ *       The request must include roomId. The API checks for room
+ *       scheduling conflicts before updating the schedule.
  *     tags: [Schedules]
  *     security:
  *       - bearerAuth: []
@@ -191,7 +194,7 @@ router.get(
  *         required: true
  *         schema:
  *           type: string
- *           example: 67abc1234567890123456789
+ *         example: 67abc1234567890123456789
  *     requestBody:
  *       required: true
  *       content:
@@ -201,6 +204,7 @@ router.get(
  *             required:
  *               - classId
  *               - lessonId
+ *               - roomId
  *               - date
  *               - startTime
  *               - endTime
@@ -211,10 +215,13 @@ router.get(
  *               lessonId:
  *                 type: string
  *                 example: 67def1234567890123456789
+ *               roomId:
+ *                 type: string
+ *                 example: 67fed1234567890123456789
  *               date:
  *                 type: string
  *                 format: date
- *                 example: 2026-10-01
+ *                 example: "2026-10-19"
  *               startTime:
  *                 type: string
  *                 example: "08:00"
@@ -223,22 +230,21 @@ router.get(
  *                 example: "10:00"
  *               status:
  *                 type: string
- *                 enum:
- *                   - SCHEDULED
- *                   - COMPLETED
- *                   - CANCELLED
+ *                 enum: [SCHEDULED, COMPLETED, CANCELLED]
  *                 example: SCHEDULED
  *     responses:
  *       200:
  *         description: Schedule updated successfully
  *       400:
- *         description: Required fields are missing
+ *         description: Invalid data or missing required fields
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
  *       404:
- *         description: Schedule not found
+ *         description: Schedule, class, lesson, or room not found
+ *       409:
+ *         description: The room already has an overlapping schedule
  *       500:
  *         description: Internal server error
  */
@@ -254,10 +260,7 @@ router.put(
  * /api/schedules/{id}:
  *   delete:
  *     summary: Delete a schedule
- *     description: |
- *       Access: CENTER_MANAGER
- *
- *       Requires a valid JWT Bearer Token.
+ *     description: Access: CENTER_MANAGER
  *     tags: [Schedules]
  *     security:
  *       - bearerAuth: []
@@ -267,10 +270,12 @@ router.put(
  *         required: true
  *         schema:
  *           type: string
- *           example: 67abc1234567890123456789
+ *         example: 67abc1234567890123456789
  *     responses:
  *       200:
  *         description: Schedule deleted successfully
+ *       400:
+ *         description: Invalid schedule ID
  *       401:
  *         description: Authentication required
  *       403:

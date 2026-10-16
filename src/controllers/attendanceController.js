@@ -516,6 +516,54 @@ const deleteAttendance = async (req, res) => {
   }
 };
 
+// GET attendance history of the logged-in member
+const getMyAttendances = async (req, res) => {
+  try {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    // Find the Member profile from the logged-in account
+    const member = await Member.findOne({
+      userId: req.user.userId,
+    });
+
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Member profile not found",
+      });
+    }
+
+    // Only retrieve attendance records belonging to this member
+    const attendances = await Attendance.find({
+      memberId: member._id,
+    })
+      .populate("classId", "name subjectId courseId coachId")
+      .populate("lessonId", "title description order learningPathId")
+      .sort({
+        date: -1,
+        createdAt: -1,
+      });
+
+    return res.status(200).json({
+      success: true,
+      message: "Personal attendance history retrieved successfully",
+      data: attendances,
+    });
+  } catch (error) {
+    console.error("Get personal attendance error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
 module.exports = {
   createAttendance,
   createCoachAttendance,
@@ -523,4 +571,5 @@ module.exports = {
   getAttendanceByScheduleForCoach,
   updateAttendance,
   deleteAttendance,
+  getMyAttendances,
 };

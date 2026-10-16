@@ -5,6 +5,7 @@ const {
   createCoachAttendance,
   getAttendances,
   getAttendanceByScheduleForCoach,
+  getMyAttendances,
   updateAttendance,
   deleteAttendance,
 } = require("../controllers/attendanceController");
@@ -13,6 +14,33 @@ const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/attendances/my:
+ *   get:
+ *     summary: Get attendance history of the logged-in member
+ *     tags: [Attendances]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Personal attendance history retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Member profile not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/my",
+  authMiddleware,
+  roleMiddleware("MEMBER"),
+  getMyAttendances
+);
 
 /**
  * @swagger
@@ -27,12 +55,15 @@ const router = express.Router();
  *         description: Attendances retrieved successfully
  *       401:
  *         description: Authentication required
+ *       500:
+ *         description: Internal server error
  */
 router.get(
   "/",
   authMiddleware,
   getAttendances
 );
+
 /**
  * @swagger
  * /api/attendances/coach:
@@ -65,6 +96,10 @@ router.get(
  *     responses:
  *       201:
  *         description: Attendance recorded successfully
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Authentication required
  *       403:
  *         description: Coach is not assigned to this class
  *       404:
@@ -97,6 +132,8 @@ router.post(
  *     responses:
  *       200:
  *         description: Schedule attendance retrieved successfully
+ *       401:
+ *         description: Authentication required
  *       403:
  *         description: Coach is not assigned to this class
  *       404:
@@ -108,6 +145,7 @@ router.get(
   roleMiddleware("COACH"),
   getAttendanceByScheduleForCoach
 );
+
 /**
  * @swagger
  * /api/attendances:
@@ -141,12 +179,10 @@ router.get(
  *               date:
  *                 type: string
  *                 format: date
- *                 example: "2026-10-05"
+ *                 example: "2026-10-16"
  *               status:
  *                 type: string
- *                 enum:
- *                   - PRESENT
- *                   - ABSENT
+ *                 enum: [PRESENT, ABSENT]
  *                 example: PRESENT
  *     responses:
  *       201:
@@ -213,12 +249,10 @@ router.post(
  *               date:
  *                 type: string
  *                 format: date
- *                 example: "2026-10-05"
+ *                 example: "2026-10-16"
  *               status:
  *                 type: string
- *                 enum:
- *                   - PRESENT
- *                   - ABSENT
+ *                 enum: [PRESENT, ABSENT]
  *                 example: PRESENT
  *     responses:
  *       200:
@@ -263,6 +297,8 @@ router.put(
  *     responses:
  *       200:
  *         description: Attendance deleted successfully
+ *       400:
+ *         description: Invalid attendance ID
  *       401:
  *         description: Authentication required
  *       403:

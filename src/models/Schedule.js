@@ -14,6 +14,13 @@ const scheduleSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Phòng học của buổi học này
+    roomId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Room",
+      required: true,
+    },
+
     date: {
       type: Date,
       required: true,
@@ -37,7 +44,15 @@ const scheduleSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    collection: "schedules",
   }
 );
+
+// Hỗ trợ truy vấn lịch theo phòng, ngày và giờ
+scheduleSchema.index({
+  roomId: 1,
+  date: 1,
+  startTime: 1,
+});
 
 module.exports = mongoose.model("Schedule", scheduleSchema);
