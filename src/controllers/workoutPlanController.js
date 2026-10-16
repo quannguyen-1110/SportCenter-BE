@@ -118,12 +118,13 @@ const createWorkoutPlan = async (req, res) => {
     }
 
     // Phải có memberId hoặc classId.
-    if (!memberId && !classId) {
-      return res.status(400).json({
-        success: false,
-        message: "Provide memberId for an individual plan or classId for a class plan",
-      });
+    if ((!memberId && !classId) || (memberId && classId)) {
+  return res.status(400).json({
+    success: false,
+    message: "Provide either memberId or classId, not both",
+  });
     }
+    
 
     if (!VALID_LEVELS.includes(level)) {
       return res.status(400).json({
@@ -321,12 +322,12 @@ const updateWorkoutPlan = async (req, res) => {
       });
     }
 
-    if (!memberId && !classId) {
-      return res.status(400).json({
-        success: false,
-        message: "Provide memberId for an individual plan or classId for a class plan",
-      });
-    }
+    if ((!memberId && !classId) || (memberId && classId)) {
+  return res.status(400).json({
+    success: false,
+    message: "Provide either memberId or classId, not both",
+  });
+}
 
     if (!VALID_LEVELS.includes(level)) {
       return res.status(400).json({
