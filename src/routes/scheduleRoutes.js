@@ -21,7 +21,7 @@ const router = express.Router();
  *   post:
  *     summary: Create a schedule
  *     description: |
- *       Access: CENTER_MANAGER
+ *       "Access: CENTER_MANAGER"
  *
  *       Each schedule must specify a room.
  *       A room cannot have overlapping non-cancelled schedules.
@@ -95,7 +95,7 @@ router.post(
  *   get:
  *     summary: Get all schedules
  *     description: |
- *       Access: ALL AUTHENTICATED ROLES
+ *       "Access: ALL AUTHENTICATED ROLES"
  *
  *       Returns schedules with class, lesson, coach and room details.
  *     tags: [Schedules]
@@ -117,7 +117,7 @@ router.get("/", authMiddleware, getSchedules);
  *   get:
  *     summary: Get current member's schedules
  *     description: |
- *       Access: MEMBER
+ *       "Access: MEMBER"
  *
  *       Returns schedules for classes where the member has a
  *       CONFIRMED registration, including room information.
@@ -149,7 +149,7 @@ router.get(
  *   get:
  *     summary: Get current coach's teaching schedules
  *     description: |
- *       Access: COACH
+ *       "Access: COACH"
  *
  *       Returns schedules for classes assigned to the authenticated
  *       coach, including room information.
@@ -181,7 +181,7 @@ router.get(
  *   put:
  *     summary: Update a schedule
  *     description: |
- *       Access: CENTER_MANAGER
+ *       "Access: CENTER_MANAGER"
  *
  *       The request must include roomId. The API checks for room
  *       scheduling conflicts before updating the schedule.
@@ -260,7 +260,7 @@ router.put(
  * /api/schedules/{id}:
  *   delete:
  *     summary: Delete a schedule
- *     description: Access: CENTER_MANAGER
+ *     description: "Access: CENTER_MANAGER"
  *     tags: [Schedules]
  *     security:
  *       - bearerAuth: []
