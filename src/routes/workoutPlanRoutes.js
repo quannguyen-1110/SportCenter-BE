@@ -16,7 +16,7 @@ const router = express.Router();
  * @swagger
  * /api/workout-plans:
  *   get:
- *     summary: Get all workout plans
+ *     summary: Get workout plans accessible to the current user
  *     tags: [Workout Plans]
  *     security:
  *       - bearerAuth: []
@@ -25,18 +25,22 @@ const router = express.Router();
  *         description: Workout plans retrieved successfully
  *       401:
  *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: User profile not found
  */
-router.get(
-  "/",
-  authMiddleware,
-  getWorkoutPlans
-);
+router.get("/", authMiddleware, getWorkoutPlans);
 
 /**
  * @swagger
  * /api/workout-plans:
  *   post:
- *     summary: Create a workout plan
+ *     summary: Create an individual or class workout plan
+ *     description: >
+ *       For an individual plan, provide memberId.
+ *       For a class-wide plan, provide classId and omit memberId.
+ *       The authenticated Coach must be assigned to the specified class.
  *     tags: [Workout Plans]
  *     security:
  *       - bearerAuth: []
@@ -47,47 +51,42 @@ router.get(
  *           schema:
  *             type: object
  *             required:
- *               - coachId
- *               - memberId
  *               - goal
  *               - level
  *               - plan
  *             properties:
  *               coachId:
  *                 type: string
+ *                 description: Optional; must match the authenticated Coach if provided.
  *                 example: 65abc1234567890123456789
  *               memberId:
  *                 type: string
+ *                 nullable: true
+ *                 description: Member ID for an individual plan.
  *                 example: 65def1234567890123456789
  *               classId:
  *                 type: string
  *                 nullable: true
- *                 example: 65ghi1234567890123456789
+ *                 description: Class ID for a class-wide plan.
+ *                 example: 65fed1234567890123456789
  *               goal:
  *                 type: string
  *                 example: Weight loss
  *               level:
  *                 type: string
- *                 enum:
- *                   - BEGINNER
- *                   - INTERMEDIATE
- *                   - ADVANCED
+ *                 enum: [BEGINNER, INTERMEDIATE, ADVANCED]
  *                 example: BEGINNER
  *               plan:
  *                 type: string
  *                 example: "Khởi động 10 phút. Squat 3x12. Push-up 3x10. Plank 3x30 giây."
  *               source:
  *                 type: string
- *                 enum:
- *                   - COACH
- *                   - AI
+ *                 enum: [COACH, AI]
  *                 default: COACH
  *                 example: COACH
  *               status:
  *                 type: string
- *                 enum:
- *                   - DRAFT
- *                   - APPROVED
+ *                 enum: [DRAFT, APPROVED]
  *                 default: DRAFT
  *                 example: DRAFT
  *     responses:
@@ -98,7 +97,7 @@ router.get(
  *       401:
  *         description: Authentication required
  *       403:
- *         description: Access denied
+ *         description: Access denied or Coach is not assigned to the class
  *       404:
  *         description: Coach, Member or Class not found
  *       500:
@@ -115,7 +114,11 @@ router.post(
  * @swagger
  * /api/workout-plans/{id}:
  *   put:
- *     summary: Update a workout plan
+ *     summary: Update an individual or class workout plan
+ *     description: >
+ *       For an individual plan, provide memberId.
+ *       For a class-wide plan, provide classId and omit memberId.
+ *       Only the Coach who owns the plan can update it.
  *     tags: [Workout Plans]
  *     security:
  *       - bearerAuth: []
@@ -133,46 +136,41 @@ router.post(
  *           schema:
  *             type: object
  *             required:
- *               - coachId
- *               - memberId
  *               - goal
  *               - level
  *               - plan
  *             properties:
  *               coachId:
  *                 type: string
+ *                 description: Optional; must match the authenticated Coach if provided.
  *                 example: 65abc1234567890123456789
  *               memberId:
  *                 type: string
+ *                 nullable: true
+ *                 description: Member ID for an individual plan.
  *                 example: 65def1234567890123456789
  *               classId:
  *                 type: string
  *                 nullable: true
- *                 example: 65ghi1234567890123456789
+ *                 description: Class ID for a class-wide plan.
+ *                 example: 65fed1234567890123456789
  *               goal:
  *                 type: string
- *                 example: Weight loss
+ *                 example: Build muscle
  *               level:
  *                 type: string
- *                 enum:
- *                   - BEGINNER
- *                   - INTERMEDIATE
- *                   - ADVANCED
+ *                 enum: [BEGINNER, INTERMEDIATE, ADVANCED]
  *                 example: INTERMEDIATE
  *               plan:
  *                 type: string
  *                 example: "Khởi động 10 phút. Squat 4x12. Push-up 4x10."
  *               source:
  *                 type: string
- *                 enum:
- *                   - COACH
- *                   - AI
+ *                 enum: [COACH, AI]
  *                 example: COACH
  *               status:
  *                 type: string
- *                 enum:
- *                   - DRAFT
- *                   - APPROVED
+ *                 enum: [DRAFT, APPROVED]
  *                 example: APPROVED
  *     responses:
  *       200:
@@ -184,7 +182,7 @@ router.post(
  *       403:
  *         description: Access denied
  *       404:
- *         description: Workout plan, Coach, Member or Class not found
+ *         description: Workout plan, Member or Class not found
  *       500:
  *         description: Internal server error
  */
@@ -213,6 +211,8 @@ router.put(
  *     responses:
  *       200:
  *         description: Workout plan deleted successfully
+ *       400:
+ *         description: Invalid workout plan ID
  *       401:
  *         description: Authentication required
  *       403:
