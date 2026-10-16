@@ -5,6 +5,8 @@ const {
   getCoaches,
   updateCoach,
   deleteCoach,
+  getMyCoachProfile,
+  getMyStudents,
 } = require("../controllers/coachController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -26,11 +28,7 @@ const router = express.Router();
  *       401:
  *         description: Authentication required
  */
-router.get(
-  "/",
-  authMiddleware,
-  getCoaches
-);
+router.get("/", authMiddleware, getCoaches);
 
 /**
  * @swagger
@@ -81,6 +79,66 @@ router.post(
   createCoach
 );
 
+/**
+ * @swagger
+ * /api/coaches/me:
+ *   get:
+ *     summary: Get my coach profile
+ *     description: Retrieve the profile belonging to the authenticated coach.
+ *     tags: [Coaches]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Coach profile retrieved successfully
+ *       401:
+ *         description: Authentication required or token invalid
+ *       403:
+ *         description: Access denied - COACH role required
+ *       404:
+ *         description: Coach profile not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/me",
+  authMiddleware,
+  roleMiddleware("COACH"),
+  getMyCoachProfile
+);
+/**
+ * @swagger
+ * /api/coaches/my-students:
+ *   get:
+ *     summary: Get students in my assigned classes
+ *     description: |
+ *       Access: COACH
+ *
+ *       Returns students with CONFIRMED registrations
+ *       in classes assigned to the authenticated coach.
+ *
+ *       Requires a valid JWT Bearer Token.
+ *     tags: [Coaches]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: My students retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied - COACH role required
+ *       404:
+ *         description: Coach profile not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/my-students",
+  authMiddleware,
+  roleMiddleware("COACH"),
+  getMyStudents
+);
 /**
  * @swagger
  * /api/coaches/{id}:

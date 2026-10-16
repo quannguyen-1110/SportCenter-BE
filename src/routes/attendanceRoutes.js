@@ -2,7 +2,9 @@ const express = require("express");
 
 const {
   createAttendance,
+  createCoachAttendance,
   getAttendances,
+  getAttendanceByScheduleForCoach,
   updateAttendance,
   deleteAttendance,
 } = require("../controllers/attendanceController");
@@ -31,7 +33,81 @@ router.get(
   authMiddleware,
   getAttendances
 );
+/**
+ * @swagger
+ * /api/attendances/coach:
+ *   post:
+ *     summary: Coach records attendance for a member in an assigned class
+ *     tags: [Attendances]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - memberId
+ *               - scheduleId
+ *               - status
+ *             properties:
+ *               memberId:
+ *                 type: string
+ *                 example: 65abc1234567890123456789
+ *               scheduleId:
+ *                 type: string
+ *                 example: 65def1234567890123456789
+ *               status:
+ *                 type: string
+ *                 enum: [PRESENT, ABSENT]
+ *                 example: PRESENT
+ *     responses:
+ *       201:
+ *         description: Attendance recorded successfully
+ *       403:
+ *         description: Coach is not assigned to this class
+ *       404:
+ *         description: Coach, schedule or member not found
+ *       409:
+ *         description: Attendance already recorded
+ */
+router.post(
+  "/coach",
+  authMiddleware,
+  roleMiddleware("COACH"),
+  createCoachAttendance
+);
 
+/**
+ * @swagger
+ * /api/attendances/schedule/{scheduleId}:
+ *   get:
+ *     summary: Coach gets attendance records for an assigned schedule
+ *     tags: [Attendances]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: scheduleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Schedule ID
+ *     responses:
+ *       200:
+ *         description: Schedule attendance retrieved successfully
+ *       403:
+ *         description: Coach is not assigned to this class
+ *       404:
+ *         description: Coach or schedule not found
+ */
+router.get(
+  "/schedule/:scheduleId",
+  authMiddleware,
+  roleMiddleware("COACH"),
+  getAttendanceByScheduleForCoach
+);
 /**
  * @swagger
  * /api/attendances:

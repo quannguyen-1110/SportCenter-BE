@@ -1,6 +1,7 @@
 const Coach = require("../models/Coach");
 const User = require("../models/User");
-
+const Class = require("../models/Class");
+const ClassRegistration = require("../models/ClassRegistration");
 // CREATE coach
 const createCoach = async (req, res) => {
   try {
@@ -162,10 +163,100 @@ const deleteCoach = async (req, res) => {
     });
   }
 };
+// GET students in classes assigned to current coach
+const getMyStudents = async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user._id;
+
+    // Find current coach profile
+    const coach = await Coach.findOne({ userId });
+
+    if (!coach) {
+      return res.status(404).json({
+        success: false,
+        message: "Coach profile not found",
+      });
+    }
+
+    // Find classes assigned to this coach
+    const classes = await Class.find({
+      coachId: coach._id,
+    }).select("_id name");
+
+    const classIds = classes.map((item) => item._id);
+
+    // Find confirmed registrations in those classes
+    const registrations = await ClassRegistration.find({
+      classId: { $in: classIds },
+      status: "CONFIRMED",
+    })
+      .populate({
+        path: "memberId",
+        select: "fullName phone userId",
+      })
+      .populate({
+        path: "classId",
+        select: "name",
+      })
+      .sort({ registeredAt: -1 });
+
+    const students = registrations
+      .filter((registration) => registration.memberId)
+      .map((registration) => ({
+        member: registration.memberId,
+        class: registration.classId,
+        registeredAt: registration.registeredAt,
+      }));
+
+    return res.status(200).json({
+      success: true,
+      message: "My students retrieved successfully",
+      data: students,
+    });
+  } catch (error) {
+    console.error("Get my students error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+// GET my coach profile
+const getMyCoachProfile = async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user._id;
+
+    const coach = await Coach.findOne({ userId })
+      .select("_id userId fullName phone createdAt updatedAt");
+
+    if (!coach) {
+      return res.status(404).json({
+        success: false,
+        message: "Coach profile not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Coach profile retrieved successfully",
+      data: coach,
+    });
+  } catch (error) {
+    console.error("Get my coach profile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
 
 module.exports = {
   createCoach,
   getCoaches,
   updateCoach,
   deleteCoach,
+  getMyCoachProfile,
+  getMyStudents,
 };

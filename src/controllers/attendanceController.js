@@ -2,6 +2,9 @@ const Attendance = require("../models/Attendance");
 const Member = require("../models/Member");
 const Class = require("../models/Class");
 const Lesson = require("../models/Lesson");
+const Coach = require("../models/Coach");
+const Schedule = require("../models/Schedule");
+const ClassRegistration = require("../models/ClassRegistration");
 
 // CREATE attendance
 const createAttendance = async (req, res) => {
@@ -126,7 +129,134 @@ const createAttendance = async (req, res) => {
     });
   }
 };
+// CREATE attendance by current coach
+const createCoachAttendance = async (req, res) => {
+  try {
+    const { memberId, scheduleId, status } = req.body;
 
+    if (!memberId || !scheduleId || !status) {
+      return res.status(400).json({
+        success: false,
+        message: "memberId, scheduleId and status are required",
+      });
+    }
+
+    if (!["PRESENT", "ABSENT"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "status must be PRESENT or ABSENT",
+      });
+    }
+
+    const coach = await Coach.findOne({
+      userId: req.user.userId,
+    });
+
+    if (!coach) {
+      return res.status(404).json({
+        success: false,
+        message: "Coach profile not found",
+      });
+    }
+
+    const schedule = await Schedule.findById(scheduleId);
+
+    if (!schedule) {
+      return res.status(404).json({
+        success: false,
+        message: "Schedule not found",
+      });
+    }
+
+    const classData = await Class.findOne({
+      _id: schedule.classId,
+      coachId: coach._id,
+    });
+
+    if (!classData) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not assigned to this class",
+      });
+    }
+
+    const lesson = await Lesson.findById(schedule.lessonId);
+
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: "Lesson not found",
+      });
+    }
+
+    const member = await Member.findById(memberId);
+
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Member not found",
+      });
+    }
+
+    const registration = await ClassRegistration.findOne({
+      classId: classData._id,
+      memberId,
+      status: "CONFIRMED",
+    });
+
+    if (!registration) {
+      return res.status(400).json({
+        success: false,
+        message: "Member is not confirmed for this class",
+      });
+    }
+
+    const attendanceDate = new Date(schedule.date);
+    attendanceDate.setUTCHours(0, 0, 0, 0);
+
+    const existingAttendance = await Attendance.findOne({
+      memberId,
+      classId: classData._id,
+      lessonId: schedule.lessonId,
+      date: attendanceDate,
+    });
+
+    if (existingAttendance) {
+      return res.status(409).json({
+        success: false,
+        message: "Attendance already recorded for this member, class, lesson and date",
+      });
+    }
+
+    const attendance = await Attendance.create({
+      memberId,
+      classId: classData._id,
+      lessonId: schedule.lessonId,
+      date: attendanceDate,
+      status,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Attendance recorded successfully",
+      data: attendance,
+    });
+  } catch (error) {
+    console.error("Create coach attendance error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Attendance already recorded",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
 // GET all attendances
 const getAttendances = async (req, res) => {
   try {
@@ -162,7 +292,68 @@ const getAttendances = async (req, res) => {
     });
   }
 };
+// GET attendance records for a schedule by current coach
+const getAttendanceByScheduleForCoach = async (req, res) => {
+  try {
+    const { scheduleId } = req.params;
 
+    const coach = await Coach.findOne({
+      userId: req.user.userId,
+    });
+
+    if (!coach) {
+      return res.status(404).json({
+        success: false,
+        message: "Coach profile not found",
+      });
+    }
+
+    const schedule = await Schedule.findById(scheduleId);
+
+    if (!schedule) {
+      return res.status(404).json({
+        success: false,
+        message: "Schedule not found",
+      });
+    }
+
+    const classData = await Class.findOne({
+      _id: schedule.classId,
+      coachId: coach._id,
+    });
+
+    if (!classData) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not assigned to this class",
+      });
+    }
+
+    const attendanceDate = new Date(schedule.date);
+    attendanceDate.setUTCHours(0, 0, 0, 0);
+
+    const attendances = await Attendance.find({
+      classId: schedule.classId,
+      lessonId: schedule.lessonId,
+      date: attendanceDate,
+    })
+      .populate("memberId", "fullName phone goal level")
+      .sort({ createdAt: 1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Schedule attendance retrieved successfully",
+      data: attendances,
+    });
+  } catch (error) {
+    console.error("Get schedule attendance for coach error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
 // UPDATE attendance
 const updateAttendance = async (req, res) => {
   try {
@@ -327,7 +518,9 @@ const deleteAttendance = async (req, res) => {
 
 module.exports = {
   createAttendance,
+  createCoachAttendance,
   getAttendances,
+  getAttendanceByScheduleForCoach,
   updateAttendance,
   deleteAttendance,
 };

@@ -4,6 +4,7 @@ const {
   createSchedule,
   getSchedules,
   getMySchedules,
+  getMyCoachSchedules,
   updateSchedule,
   deleteSchedule,
 } = require("../controllers/scheduleController");
@@ -139,7 +140,39 @@ router.get(
   roleMiddleware("MEMBER"),
   getMySchedules
 );
-
+/**
+ * @swagger
+ * /api/schedules/coach/my:
+ *   get:
+ *     summary: Get current coach's teaching schedules
+ *     description: |
+ *       Access: COACH
+ *
+ *       Returns schedules for classes assigned to the
+ *       currently authenticated coach.
+ *
+ *       Requires a valid JWT Bearer Token.
+ *     tags: [Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Coach schedules retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Coach profile not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/coach/my",
+  authMiddleware,
+  roleMiddleware("COACH"),
+  getMyCoachSchedules
+);
 /**
  * @swagger
  * /api/schedules/{id}:

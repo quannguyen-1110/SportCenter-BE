@@ -174,17 +174,17 @@ router.post("/google", googleLogin);
  *       content:
  *         application/json:
  *           schema:
-  type: object
-  required:
-    - challengeToken
-    - otp
-  properties:
-    challengeToken:
-      type: string
-      description: Challenge token returned by Google login
-    otp:
-      type: string
-      example: "123456"
+ *             type: object
+ *             required:
+ *               - challengeToken
+ *               - otp
+ *             properties:
+ *               challengeToken:
+ *                 type: string
+ *                 description: Challenge token returned by Google login
+ *               otp:
+ *                 type: string
+ *                 example: "123456"
  *     responses:
  *       200:
  *         description: OTP verified and login successful
@@ -192,7 +192,7 @@ router.post("/google", googleLogin);
  *         description: Invalid or expired OTP
  *       500:
  *         description: Server error
- */ 
+ */
 router.post("/google/verify-otp", verifyGoogleOTP);
 
 module.exports = router;

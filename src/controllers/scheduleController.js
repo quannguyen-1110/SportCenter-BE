@@ -1,6 +1,8 @@
 const Schedule = require("../models/Schedule");
 const Member = require("../models/Member");
 const ClassRegistration = require("../models/ClassRegistration");
+const Coach = require("../models/Coach");
+const Class = require("../models/Class");
 
 // CREATE schedule
 const createSchedule = async (req, res) => {
@@ -167,7 +169,72 @@ const getMySchedules = async (req, res) => {
     });
   }
 };
+// GET schedules of current coach
+const getMyCoachSchedules = async (req, res) => {
+  try {
+    const coach = await Coach.findOne({
+      userId: req.user.userId,
+    });
 
+    if (!coach) {
+      return res.status(404).json({
+        success: false,
+        message: "Coach profile not found",
+      });
+    }
+
+    // Find classes assigned to the current coach
+    const classes = await Class.find({
+      coachId: coach._id,
+    }).select("_id");
+
+    const classIds = classes.map((item) => item._id);
+
+    // Find schedules belonging to those classes
+    const schedules = await Schedule.find({
+      classId: { $in: classIds },
+    })
+      .populate({
+        path: "classId",
+        select: "name subjectId courseId coachId",
+        populate: [
+          {
+            path: "subjectId",
+            select: "name",
+          },
+          {
+            path: "courseId",
+            select: "name description status",
+          },
+          {
+            path: "coachId",
+            select: "fullName phone",
+          },
+        ],
+      })
+      .populate({
+        path: "lessonId",
+        select: "title description order learningPathId",
+      })
+      .sort({
+        date: 1,
+        startTime: 1,
+      });
+
+    return res.status(200).json({
+      success: true,
+      message: "My teaching schedules retrieved successfully",
+      data: schedules,
+    });
+  } catch (error) {
+    console.error("Get my coach schedules error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
 // UPDATE schedule
 const updateSchedule = async (req, res) => {
   try {
@@ -266,6 +333,7 @@ module.exports = {
   createSchedule,
   getSchedules,
   getMySchedules,
+  getMyCoachSchedules,
   updateSchedule,
   deleteSchedule,
 };
