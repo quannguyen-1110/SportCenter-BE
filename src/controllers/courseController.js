@@ -1,23 +1,49 @@
+const mongoose = require("mongoose");
 const Course = require("../models/Course");
 const LearningPath = require("../models/LearningPath");
 
+// CREATE course
 const createCourse = async (req, res) => {
   try {
-    const { name, description, status } = req.body;
+    const { name, description, price, status } = req.body;
 
-    // Validate required field
-    if (!name) {
+    // Validate name
+    if (typeof name !== "string" || !name.trim()) {
       return res.status(400).json({
         success: false,
         message: "name is required",
       });
     }
 
-    // Create course
+    // Validate price
+    if (
+      price === undefined ||
+      typeof price !== "number" ||
+      !Number.isFinite(price) ||
+      price < 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "price is required and must be a non-negative number",
+      });
+    }
+
+    // Validate status
+    const courseStatus = status || "ACTIVE";
+
+    if (!["ACTIVE", "INACTIVE"].includes(courseStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "status must be ACTIVE or INACTIVE",
+      });
+    }
+
     const course = await Course.create({
       name: name.trim(),
-      description: description || "",
-      status: status || "ACTIVE",
+      description:
+        typeof description === "string" ? description.trim() : "",
+      price,
+      status: courseStatus,
     });
 
     return res.status(201).json({
@@ -27,6 +53,7 @@ const createCourse = async (req, res) => {
         id: course._id,
         name: course.name,
         description: course.description,
+        price: course.price,
         status: course.status,
         createdAt: course.createdAt,
       },
@@ -34,7 +61,6 @@ const createCourse = async (req, res) => {
   } catch (error) {
     console.error("Create course error:", error);
 
-    // Duplicate course name
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -49,11 +75,11 @@ const createCourse = async (req, res) => {
   }
 };
 
-// Get all courses
+// GET all courses
 const getCourses = async (req, res) => {
   try {
     const courses = await Course.find()
-      .select("_id name description status createdAt updatedAt")
+      .select("_id name description price status createdAt updatedAt")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -71,26 +97,32 @@ const getCourses = async (req, res) => {
   }
 };
 
-// Update course
+// UPDATE course
 const updateCourse = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, status } = req.body;
+    const { name, description, price, status } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid course ID",
+      });
+    }
 
     // Validate request body
     if (
       name === undefined &&
       description === undefined &&
+      price === undefined &&
       status === undefined
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "At least one field is required to update",
+        message: "At least one field is required to update",
       });
     }
 
-    // Check course
     const course = await Course.findById(id);
 
     if (!course) {
@@ -102,7 +134,7 @@ const updateCourse = async (req, res) => {
 
     // Update name
     if (name !== undefined) {
-      if (!name.trim()) {
+      if (typeof name !== "string" || !name.trim()) {
         return res.status(400).json({
           success: false,
           message: "Course name cannot be empty",
@@ -126,7 +158,30 @@ const updateCourse = async (req, res) => {
 
     // Update description
     if (description !== undefined) {
-      course.description = description;
+      if (typeof description !== "string") {
+        return res.status(400).json({
+          success: false,
+          message: "description must be a string",
+        });
+      }
+
+      course.description = description.trim();
+    }
+
+    // Update price
+    if (price !== undefined) {
+      if (
+        typeof price !== "number" ||
+        !Number.isFinite(price) ||
+        price < 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "price must be a non-negative number",
+        });
+      }
+
+      course.price = price;
     }
 
     // Update status
@@ -134,8 +189,7 @@ const updateCourse = async (req, res) => {
       if (!["ACTIVE", "INACTIVE"].includes(status)) {
         return res.status(400).json({
           success: false,
-          message:
-            "status must be ACTIVE or INACTIVE",
+          message: "status must be ACTIVE or INACTIVE",
         });
       }
 
@@ -151,6 +205,7 @@ const updateCourse = async (req, res) => {
         id: course._id,
         name: course.name,
         description: course.description,
+        price: course.price,
         status: course.status,
         createdAt: course.createdAt,
         updatedAt: course.updatedAt,
@@ -159,7 +214,6 @@ const updateCourse = async (req, res) => {
   } catch (error) {
     console.error("Update course error:", error);
 
-    // Duplicate course name
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -174,12 +228,18 @@ const updateCourse = async (req, res) => {
   }
 };
 
-// Delete course
+// DELETE course
 const deleteCourse = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check course
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid course ID",
+      });
+    }
+
     const course = await Course.findById(id);
 
     if (!course) {
@@ -189,7 +249,7 @@ const deleteCourse = async (req, res) => {
       });
     }
 
-    // Check learning paths using this course
+    // Check whether the course is used by a learning path
     const learningPath = await LearningPath.findOne({
       courseId: id,
     });
@@ -202,7 +262,6 @@ const deleteCourse = async (req, res) => {
       });
     }
 
-    // Delete course
     await Course.findByIdAndDelete(id);
 
     return res.status(200).json({

@@ -164,16 +164,25 @@ const getPayments = async (req, res) => {
 
 // UPDATE payment
 
+// UPDATE payment
 const updatePayment = async (req, res) => {
   try {
     const { id } = req.params;
     const {
       classRegistrationId,
-      amount,
       paymentMethod,
       status,
       paymentDate,
     } = req.body;
+
+    // Payment amount must never be changed through this endpoint.
+    if (req.body.amount !== undefined) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Payment amount cannot be changed. It is determined by Course.price.",
+      });
+    }
 
     const payment = await Payment.findById(id);
 
@@ -184,7 +193,7 @@ const updatePayment = async (req, res) => {
       });
     }
 
-    // Payment status must only be changed by the mock simulation endpoint.
+    // Only the payment simulation or VNPay callback can change payment status.
     if (status !== undefined || paymentDate !== undefined) {
       return res.status(400).json({
         success: false,
@@ -205,10 +214,9 @@ const updatePayment = async (req, res) => {
       });
     }
 
-    const classRegistration =
-      await ClassRegistration.findById(
-        payment.classRegistrationId
-      );
+    const classRegistration = await ClassRegistration.findById(
+      payment.classRegistrationId
+    );
 
     if (!classRegistration) {
       return res.status(404).json({
@@ -220,8 +228,7 @@ const updatePayment = async (req, res) => {
     if (classRegistration.status === "CANCELLED") {
       return res.status(400).json({
         success: false,
-        message:
-          "Cannot update payment for a cancelled registration",
+        message: "Cannot update payment for a cancelled registration",
       });
     }
 
@@ -229,20 +236,6 @@ const updatePayment = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Only pending payments can be updated",
-      });
-    }
-
-    if (
-      amount !== undefined &&
-      (
-        typeof amount !== "number" ||
-        !Number.isFinite(amount) ||
-        amount < 0
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "amount must be a valid number >= 0",
       });
     }
 
@@ -261,10 +254,6 @@ const updatePayment = async (req, res) => {
         message:
           "paymentMethod must be CASH, BANK_TRANSFER or ONLINE",
       });
-    }
-
-    if (amount !== undefined) {
-      payment.amount = amount;
     }
 
     if (paymentMethod !== undefined) {
@@ -296,9 +285,6 @@ const updatePayment = async (req, res) => {
     });
   }
 };
-
-
-
 
 
 const simulatePaymentResult = async (req, res) => {

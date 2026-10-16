@@ -28,6 +28,7 @@ const router = express.Router();
  *             type: object
  *             required:
  *               - name
+ *               - price
  *             properties:
  *               name:
  *                 type: string
@@ -35,11 +36,14 @@ const router = express.Router();
  *               description:
  *                 type: string
  *                 example: Basic yoga training course
+ *               price:
+ *                 type: number
+ *                 minimum: 0
+ *                 example: 1500000
  *               status:
  *                 type: string
- *                 enum:
- *                   - ACTIVE
- *                   - INACTIVE
+ *                 enum: [ACTIVE, INACTIVE]
+ *                 default: ACTIVE
  *                 example: ACTIVE
  *     responses:
  *       201:
@@ -52,6 +56,8 @@ const router = express.Router();
  *         description: Access denied
  *       409:
  *         description: Course name already exists
+ *       500:
+ *         description: Internal server error
  */
 router.post(
   "/",
@@ -64,7 +70,7 @@ router.post(
  * @swagger
  * /api/courses:
  *   get:
- *     summary: Get all courses
+ *     summary: Get all courses including prices
  *     tags: [Courses]
  *     security:
  *       - bearerAuth: []
@@ -86,7 +92,7 @@ router.get(
  * @swagger
  * /api/courses/{id}:
  *   put:
- *     summary: Update a course
+ *     summary: Update course information or price
  *     tags: [Courses]
  *     security:
  *       - bearerAuth: []
@@ -96,6 +102,7 @@ router.get(
  *         required: true
  *         schema:
  *           type: string
+ *         description: Course ID
  *         example: 67abc1234567890123456789
  *     requestBody:
  *       required: true
@@ -110,17 +117,19 @@ router.get(
  *               description:
  *                 type: string
  *                 example: Advanced yoga training course
+ *               price:
+ *                 type: number
+ *                 minimum: 0
+ *                 example: 2000000
  *               status:
  *                 type: string
- *                 enum:
- *                   - ACTIVE
- *                   - INACTIVE
+ *                 enum: [ACTIVE, INACTIVE]
  *                 example: ACTIVE
  *     responses:
  *       200:
  *         description: Course updated successfully
  *       400:
- *         description: Invalid request
+ *         description: Invalid request or price
  *       401:
  *         description: Authentication required
  *       403:
@@ -153,10 +162,13 @@ router.put(
  *         required: true
  *         schema:
  *           type: string
+ *         description: Course ID
  *         example: 67abc1234567890123456789
  *     responses:
  *       200:
  *         description: Course deleted successfully
+ *       400:
+ *         description: Invalid course ID
  *       401:
  *         description: Authentication required
  *       403:
