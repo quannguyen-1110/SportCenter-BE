@@ -5,6 +5,9 @@ const {
   getPayments,
   updatePayment,
   simulatePaymentResult,
+  createVnpayPaymentUrl,
+  vnpayReturn,
+  vnpayIpn,
 } = require("../controllers/paymentController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -26,11 +29,7 @@ const router = express.Router();
  *       401:
  *         description: Authentication required
  */
-router.get(
-  "/",
-  authMiddleware,
-  getPayments
-);
+router.get("/", authMiddleware, getPayments);
 
 /**
  * @swagger
@@ -48,33 +47,15 @@ router.get(
  *             type: object
  *             required:
  *               - classRegistrationId
- *               - amount
  *               - paymentMethod
  *             properties:
  *               classRegistrationId:
  *                 type: string
  *                 example: 65abc1234567890123456789
- *               amount:
- *                 type: number
- *                 example: 500000
  *               paymentMethod:
  *                 type: string
- *                 enum:
- *                   - CASH
- *                   - BANK_TRANSFER
- *                   - ONLINE
- *                 example: BANK_TRANSFER
- *               status:
- *                 type: string
- *                 enum:
- *                   - PENDING
- *                   - SUCCESS
- *                   - FAILED
- *                 example: SUCCESS
- *               paymentDate:
- *                 type: string
- *                 format: date-time
- *                 example: 2026-10-05T10:00:00.000Z
+ *                 enum: [CASH, BANK_TRANSFER, ONLINE]
+ *                 example: ONLINE
  *     responses:
  *       201:
  *         description: Payment created successfully
@@ -85,16 +66,12 @@ router.get(
  *       403:
  *         description: Access denied
  *       404:
- *         description: Class registration not found
+ *         description: Registration, class or course not found
  */
 router.post(
   "/",
   authMiddleware,
-  roleMiddleware(
-    "MEMBER",
-    "RECEPTIONIST",
-    "CENTER_MANAGER"
-  ),
+  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
   createPayment
 );
 
@@ -102,7 +79,7 @@ router.post(
  * @swagger
  * /api/payments/{id}:
  *   put:
- *     summary: Update a payment
+ *     summary: Update a pending payment
  *     tags: [Payments]
  *     security:
  *       - bearerAuth: []
@@ -119,55 +96,30 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - classRegistrationId
- *               - amount
- *               - paymentMethod
  *             properties:
- *               classRegistrationId:
- *                 type: string
- *                 example: 65abc1234567890123456789
  *               amount:
  *                 type: number
  *                 example: 500000
  *               paymentMethod:
  *                 type: string
- *                 enum:
- *                   - CASH
- *                   - BANK_TRANSFER
- *                   - ONLINE
- *                 example: BANK_TRANSFER
- *               status:
- *                 type: string
- *                 enum:
- *                   - PENDING
- *                   - SUCCESS
- *                   - FAILED
- *                 example: SUCCESS
- *               paymentDate:
- *                 type: string
- *                 format: date-time
- *                 example: 2026-10-05T10:00:00.000Z
+ *                 enum: [CASH, BANK_TRANSFER, ONLINE]
+ *                 example: ONLINE
  *     responses:
  *       200:
  *         description: Payment updated successfully
  *       400:
- *         description: Invalid input
+ *         description: Invalid input or payment cannot be updated
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
  *       404:
- *         description: Payment or Class registration not found
+ *         description: Payment or registration not found
  */
 router.put(
   "/:id",
   authMiddleware,
-  roleMiddleware(
-    "MEMBER",
-    "RECEPTIONIST",
-    "CENTER_MANAGER"
-  ),
+  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
   updatePayment
 );
 
@@ -204,6 +156,8 @@ router.put(
  *         description: Mock payment result simulated
  *       400:
  *         description: Invalid status or payment cannot be simulated
+ *       401:
+ *         description: Authentication required
  *       403:
  *         description: Mock mode is disabled
  *       404:
@@ -215,5 +169,46 @@ router.post(
   roleMiddleware("MEMBER"),
   simulatePaymentResult
 );
+
+/**
+ * @swagger
+ * /api/payments/{id}/vnpay:
+ *   post:
+ *     summary: Create a VNPay Sandbox payment URL
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Payment ID
+ *     responses:
+ *       200:
+ *         description: VNPay payment URL created successfully
+ *       400:
+ *         description: Payment is not eligible for VNPay
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied or VNPay disabled
+ *       404:
+ *         description: Payment or registration not found
+ */
+router.post(
+  "/:id/vnpay",
+  authMiddleware,
+  roleMiddleware("MEMBER"),
+  createVnpayPaymentUrl
+);
+
+// VNPay redirects the customer's browser here after payment.
+router.get("/vnpay-return", vnpayReturn);
+
+// VNPay calls this endpoint server-to-server.
+// Do not add authMiddleware to this route.
+router.get("/vnpay-ipn", vnpayIpn);
 
 module.exports = router;

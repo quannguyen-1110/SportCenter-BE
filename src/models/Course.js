@@ -1,3 +1,4 @@
+
 const mongoose = require("mongoose");
 
 const courseSchema = new mongoose.Schema(
@@ -12,6 +13,13 @@ const courseSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: "",
+    },
+
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
     },
 
     status: {
