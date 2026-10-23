@@ -1,8 +1,10 @@
+
 const express = require("express");
 
 const {
   createNotification,
   getNotifications,
+  getMyNotifications,
   updateNotification,
 } = require("../controllers/notificationController");
 
@@ -13,9 +15,16 @@ const router = express.Router();
 
 /**
  * @swagger
- * /api/notifications:
+ * tags:
+ *   name: Notifications
+ *   description: Notification management APIs
+ */
+
+/**
+ * @swagger
+ * /api/notifications/my:
  *   get:
- *     summary: Get all notifications
+ *     summary: Get notifications of the current user
  *     tags: [Notifications]
  *     security:
  *       - bearerAuth: []
@@ -24,10 +33,37 @@ const router = express.Router();
  *         description: Notifications retrieved successfully
  *       401:
  *         description: Authentication required
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/my",
+  authMiddleware,
+  getMyNotifications
+);
+
+/**
+ * @swagger
+ * /api/notifications:
+ *   get:
+ *     summary: Get all notifications (management only)
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notifications retrieved successfully
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Internal server error
  */
 router.get(
   "/",
   authMiddleware,
+  roleMiddleware("CENTER_MANAGER", "RECEPTIONIST"),
   getNotifications
 );
 
@@ -35,7 +71,8 @@ router.get(
  * @swagger
  * /api/notifications:
  *   post:
- *     summary: Create a notification
+ *     summary: Create a notification manually
+ *     description: Restricted to CENTER_MANAGER and RECEPTIONIST.
  *     tags: [Notifications]
  *     security:
  *       - bearerAuth: []
@@ -52,13 +89,13 @@ router.get(
  *             properties:
  *               userId:
  *                 type: string
- *                 example: 65abc1234567890123456789
+ *                 example: "65abc1234567890123456789"
  *               title:
  *                 type: string
- *                 example: Lịch tập hôm nay
+ *                 example: "Lịch tập hôm nay"
  *               message:
  *                 type: string
- *                 example: Bạn có lớp Football lúc 18:00 hôm nay.
+ *                 example: "Bạn có lớp Football lúc 18:00 hôm nay."
  *     responses:
  *       201:
  *         description: Notification created successfully
@@ -70,15 +107,13 @@ router.get(
  *         description: Access denied
  *       404:
  *         description: User not found
+ *       500:
+ *         description: Internal server error
  */
 router.post(
   "/",
   authMiddleware,
-  roleMiddleware(
-    "CENTER_MANAGER",
-    "COACH",
-    "RECEPTIONIST"
-  ),
+  roleMiddleware("CENTER_MANAGER", "RECEPTIONIST"),
   createNotification
 );
 
@@ -86,7 +121,8 @@ router.post(
  * @swagger
  * /api/notifications/{id}:
  *   put:
- *     summary: Mark a notification as read or unread
+ *     summary: Mark one of your notifications as read or unread
+ *     description: Users can update only notifications belonging to their own account.
  *     tags: [Notifications]
  *     security:
  *       - bearerAuth: []
@@ -96,7 +132,7 @@ router.post(
  *         required: true
  *         schema:
  *           type: string
- *         example: 65abc1234567890123456789
+ *         example: "65abc1234567890123456789"
  *     requestBody:
  *       required: true
  *       content:
@@ -113,11 +149,13 @@ router.post(
  *       200:
  *         description: Notification updated successfully
  *       400:
- *         description: Invalid input
+ *         description: Invalid notification ID or isRead value
  *       401:
  *         description: Authentication required
  *       404:
  *         description: Notification not found
+ *       500:
+ *         description: Internal server error
  */
 router.put(
   "/:id",

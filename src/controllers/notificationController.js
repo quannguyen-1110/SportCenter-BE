@@ -1,7 +1,14 @@
+
+const mongoose = require("mongoose");
 const Notification = require("../models/Notification");
 const User = require("../models/User");
 
-// CREATE notification
+// ==========================================
+// CREATE NOTIFICATION
+// POST /api/notifications
+// Dùng cho chức năng quản trị tạo thông báo.
+// Route cần giới hạn quyền phù hợp.
+// ==========================================
 const createNotification = async (req, res) => {
   try {
     const { userId, title, message } = req.body;
@@ -10,6 +17,25 @@ const createNotification = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "userId, title and message are required",
+      });
+    }
+
+    if (!mongoose.isValidObjectId(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid userId",
+      });
+    }
+
+    if (
+      typeof title !== "string" ||
+      !title.trim() ||
+      typeof message !== "string" ||
+      !message.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Title and message must be non-empty strings",
       });
     }
 
@@ -50,19 +76,22 @@ const createNotification = async (req, res) => {
   }
 };
 
-// GET all notifications
+// ==========================================
+// GET ALL NOTIFICATIONS
+// GET /api/notifications
+// Dùng cho quản trị xem toàn bộ thông báo.
+// Route chỉ nên cho phép vai trò quản lý phù hợp.
+// ==========================================
 const getNotifications = async (req, res) => {
   try {
     const notifications = await Notification.find()
-      .populate(
-        "userId",
-        "email role status"
-      )
+      .populate("userId", "email role status")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
       message: "Notifications retrieved successfully",
+      count: notifications.length,
       data: notifications,
     });
   } catch (error) {
@@ -75,11 +104,55 @@ const getNotifications = async (req, res) => {
   }
 };
 
-// UPDATE notification
+// ==========================================
+// GET MY NOTIFICATIONS
+// GET /api/notifications/my
+// Người dùng chỉ xem thông báo của mình.
+// ==========================================
+const getMyNotifications = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const notifications = await Notification.find({ userId })
+      .sort({ createdAt: -1 });
+
+    const unreadCount = notifications.filter(
+      (notification) => !notification.isRead
+    ).length;
+
+    return res.status(200).json({
+      success: true,
+      message: "My notifications retrieved successfully",
+      count: notifications.length,
+      unreadCount,
+      data: notifications,
+    });
+  } catch (error) {
+    console.error("Get my notifications error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// ==========================================
+// UPDATE MY NOTIFICATION
+// PUT /api/notifications/:id
+// Người dùng chỉ cập nhật thông báo của mình.
+// ==========================================
 const updateNotification = async (req, res) => {
   try {
     const { id } = req.params;
     const { isRead } = req.body;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid notification ID",
+      });
+    }
 
     if (typeof isRead !== "boolean") {
       return res.status(400).json({
@@ -88,7 +161,19 @@ const updateNotification = async (req, res) => {
       });
     }
 
-    const notification = await Notification.findById(id);
+    const notification = await Notification.findOneAndUpdate(
+      {
+        _id: id,
+        userId: req.user.userId,
+      },
+      {
+        $set: { isRead },
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
 
     if (!notification) {
       return res.status(404).json({
@@ -96,10 +181,6 @@ const updateNotification = async (req, res) => {
         message: "Notification not found",
       });
     }
-
-    notification.isRead = isRead;
-
-    await notification.save();
 
     return res.status(200).json({
       success: true,
@@ -110,6 +191,7 @@ const updateNotification = async (req, res) => {
         title: notification.title,
         message: notification.message,
         isRead: notification.isRead,
+        createdAt: notification.createdAt,
         updatedAt: notification.updatedAt,
       },
     });
@@ -126,5 +208,6 @@ const updateNotification = async (req, res) => {
 module.exports = {
   createNotification,
   getNotifications,
+  getMyNotifications,
   updateNotification,
 };
