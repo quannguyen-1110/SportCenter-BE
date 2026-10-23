@@ -13,12 +13,17 @@ const googleClient = new OAuth2Client(
 
 const register = async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const { email, password } = req.body;
 
-    if (!email || !password || !role) {
+    if (
+      typeof email !== "string" ||
+      !email.trim() ||
+      typeof password !== "string" ||
+      !password
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Email, password and role are required",
+        message: "Email and password are required",
       });
     }
 
@@ -29,8 +34,10 @@ const register = async (req, res) => {
       });
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+
     const existingUser = await User.findOne({
-      email: email.toLowerCase().trim(),
+      email: normalizedEmail,
     });
 
     if (existingUser) {
@@ -43,9 +50,10 @@ const register = async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
 
     const user = await User.create({
-      email: email.toLowerCase().trim(),
+      email: normalizedEmail,
       passwordHash,
-      role,
+      role: "MEMBER",
+      authProvider: "LOCAL",
     });
 
     return res.status(201).json({
@@ -60,6 +68,13 @@ const register = async (req, res) => {
     });
   } catch (error) {
     console.error("Register error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Email already exists",
+      });
+    }
 
     return res.status(500).json({
       success: false,
@@ -398,7 +413,6 @@ const verifyGoogleOTP = async (req, res) => {
   }
 };
 
-
 const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
@@ -436,3 +450,4 @@ module.exports = {
   verifyGoogleOTP,
   getMe,
 };
+kg

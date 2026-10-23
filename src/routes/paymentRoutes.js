@@ -8,6 +8,8 @@ const {
   createVnpayPaymentUrl,
   vnpayReturn,
   vnpayIpn,
+  recordOfflinePayment,
+  getPaymentReceipt,
 } = require("../controllers/paymentController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -210,5 +212,21 @@ router.get("/vnpay-return", vnpayReturn);
 // VNPay calls this endpoint server-to-server.
 // Do not add authMiddleware to this route.
 router.get("/vnpay-ipn", vnpayIpn);
+
+// Receptionist confirms cash or bank-transfer payment.
+router.post(
+  "/:id/record-payment",
+  authMiddleware,
+  roleMiddleware("RECEPTIONIST", "CENTER_MANAGER"),
+  recordOfflinePayment
+);
+
+// Open a printable receipt for a successful payment.
+router.get(
+  "/:id/receipt",
+  authMiddleware,
+  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
+  getPaymentReceipt
+);
 
 module.exports = router;

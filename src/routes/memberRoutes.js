@@ -2,6 +2,7 @@ const express = require("express");
 
 const {
   createMember,
+  createMemberAtFrontDesk,
   getMembers,
   updateMember,
   deleteMember,
@@ -92,7 +93,65 @@ router.post(
   roleMiddleware("MEMBER"),
   createMyProfile
 );
-
+/**
+ * @swagger
+ * /api/members/front-desk:
+ *   post:
+ *     summary: Create a member account and profile at the front desk
+ *     description: "Access: CENTER_MANAGER, RECEPTIONIST."
+ *     tags: [Members]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - fullName
+ *               - phone
+ *               - goal
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: member@example.com
+ *               password:
+ *                 type: string
+ *                 example: "123456"
+ *               fullName:
+ *                 type: string
+ *                 example: Nguyen Van A
+ *               phone:
+ *                 type: string
+ *                 example: "0901234567"
+ *               goal:
+ *                 type: string
+ *                 example: Build muscle
+ *               level:
+ *                 type: string
+ *                 enum: [BEGINNER, INTERMEDIATE, ADVANCED]
+ *                 example: BEGINNER
+ *     responses:
+ *       201:
+ *         description: Member account and profile created successfully
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       409:
+ *         description: Email or another unique field already exists
+ */
+router.post(
+  "/front-desk",
+  authMiddleware,
+  roleMiddleware("CENTER_MANAGER", "RECEPTIONIST"),
+  createMemberAtFrontDesk
+);
 /**
  * @swagger
  * /api/members/me:

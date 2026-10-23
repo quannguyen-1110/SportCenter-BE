@@ -350,6 +350,22 @@ const updateClassRegistration = async (req, res) => {
     const newStatus =
       status !== undefined ? status : registration.status;
 
+    // Do not cancel a paid registration before refund handling exists.
+if (newStatus === "CANCELLED") {
+  const successfulPayment = await Payment.exists({
+    classRegistrationId: registration._id,
+    status: "SUCCESS",
+  });
+
+  if (successfulPayment) {
+    return res.status(409).json({
+      success: false,
+      message:
+        "Cannot cancel a paid registration until the refund process is handled",
+    });
+  }
+}
+    
     // Check capacity before activating a registration.
 if (
   ["PENDING_PAYMENT", "CONFIRMED"].includes(newStatus)

@@ -99,18 +99,12 @@ router.post(
  * @swagger
  * /api/class-registrations/{id}:
  *   put:
- *     summary: Update a class registration
- *     description: |
+ *     summary: Update or cancel a class registration
+ *     description: >
  *       Access: MEMBER, RECEPTIONIST, CENTER_MANAGER.
- *
- *       MEMBER can only cancel their own registration and cannot
- *       directly confirm it.
- *
- *       RECEPTIONIST and CENTER_MANAGER may update registration
- *       details. Setting status to CONFIRMED requires a successful
- *       payment recorded for this registration.
- *
- *       classId and memberId may be omitted when not being changed.
+ *       Members can only cancel their own registrations.
+ *       Staff can manage registrations. A paid registration cannot
+ *       be cancelled until the refund process is handled.
  *     tags: [Class Registrations]
  *     security:
  *       - bearerAuth: []
@@ -118,7 +112,6 @@ router.post(
  *       - in: path
  *         name: id
  *         required: true
- *         description: Class registration ID
  *         schema:
  *           type: string
  *         example: 65abc1234567890123456789
@@ -129,43 +122,32 @@ router.post(
  *           schema:
  *             type: object
  *             properties:
- *               classId:
- *                 type: string
- *                 example: 65abc1234567890123456789
- *               memberId:
- *                 type: string
- *                 example: 65def1234567890123456789
  *               status:
  *                 type: string
- *                 enum:
- *                   - PENDING_PAYMENT
- *                   - CONFIRMED
- *                   - CANCELLED
+ *                 enum: [PENDING_PAYMENT, CONFIRMED, CANCELLED]
  *                 example: CANCELLED
+ *               classId:
+ *                 type: string
+ *               memberId:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Class registration updated successfully
+ *         description: Registration updated successfully
  *       400:
- *         description: Invalid input or successful payment required
+ *         description: Invalid input or payment required
  *       401:
  *         description: Authentication required
  *       403:
- *         description: Access denied or Member attempted a forbidden change
+ *         description: Access denied
  *       404:
- *         description: Registration, Class, or Member not found
+ *         description: Registration, class or member not found
  *       409:
- *         description: Duplicate registration or payment already exists
- *       500:
- *         description: Internal server error
+ *         description: Duplicate registration, capacity conflict or payment restriction
  */
 router.put(
   "/:id",
   authMiddleware,
-  roleMiddleware(
-    "MEMBER",
-    "RECEPTIONIST",
-    "CENTER_MANAGER"
-  ),
+  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
   updateClassRegistration
 );
 

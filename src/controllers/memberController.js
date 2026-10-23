@@ -1,5 +1,6 @@
 const Member = require("../models/Member");
 const User = require("../models/User");
+const bcrypt = require("bcryptjs");
 
 // CREATE member
 const createMember = async (req, res) => {
@@ -77,17 +78,51 @@ const createMember = async (req, res) => {
     });
   }
 };
-
-// GET all members
+// GET ALL MEMBERS / SEARCH MEMBERS
+// GET and search members by name or phone
 const getMembers = async (req, res) => {
   try {
-    const members = await Member.find()
-      .select("_id userId fullName phone goal level createdAt updatedAt")
-      .sort({ createdAt: -1 });
+    const rawQuery =
+      typeof req.query.q === "string"
+        ? req.query.q.trim()
+        : "";
+
+    const filter = {};
+
+    if (rawQuery) {
+      // Escape regex special characters to search literal text.
+      const escapedQuery = rawQuery.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
+
+      filter.$or = [
+        {
+          fullName: {
+            $regex: escapedQuery,
+            $options: "i",
+          },
+        },
+        {
+          phone: {
+            $regex: escapedQuery,
+          },
+        },
+      ];
+    }
+
+    const members = await Member.find(filter)
+      .select(
+        "_id userId fullName phone goal level createdAt updatedAt"
+      )
+      .sort({ createdAt: -1 })
+      .limit(100);
 
     return res.status(200).json({
       success: true,
-      message: "Members retrieved successfully",
+      message: rawQuery
+        ? "Members searched successfully"
+        : "Members retrieved successfully",
       data: members,
     });
   } catch (error) {
@@ -99,7 +134,6 @@ const getMembers = async (req, res) => {
     });
   }
 };
-
 // UPDATE member
 const updateMember = async (req, res) => {
   try {
@@ -368,6 +402,133 @@ const updateMyProfile = async (req, res) => {
   }
 };
 
+// CREATE MEMBER ACCOUNT AT FRONT DESK
+const createMemberAtFrontDesk = async (req, res) => {
+  let createdUser = null;
+
+  try {
+    const { email, password, fullName, phone, goal, level } = req.body;
+
+    if (
+      typeof email !== "string" ||
+      !email.trim() ||
+      typeof password !== "string" ||
+      !password ||
+      typeof fullName !== "string" ||
+      !fullName.trim() ||
+      typeof phone !== "string" ||
+      !phone.trim() ||
+      typeof goal !== "string" ||
+      !goal.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "email, password, fullName, phone and goal are required",
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedPhone = phone.trim();
+    const memberLevel = level || "BEGINNER";
+
+    if (!["BEGINNER", "INTERMEDIATE", "ADVANCED"].includes(memberLevel)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid member level",
+      });
+    }
+
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: "Email already exists",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Create account with a fixed MEMBER role.
+    createdUser = await User.create({
+      email: normalizedEmail,
+      passwordHash,
+      authProvider: "LOCAL",
+      role: "MEMBER",
+      status: "ACTIVE",
+    });
+
+    // Create the profile linked to the new account.
+    const member = await Member.create({
+      userId: createdUser._id,
+      fullName: fullName.trim(),
+      phone: normalizedPhone,
+      goal: goal.trim(),
+      level: memberLevel,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Member account and profile created successfully",
+      data: {
+        user: {
+          id: createdUser._id,
+          email: createdUser.email,
+          role: createdUser.role,
+          status: createdUser.status,
+        },
+        member: {
+          id: member._id,
+          userId: member.userId,
+          fullName: member.fullName,
+          phone: member.phone,
+          goal: member.goal,
+          level: member.level,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Create member at front desk error:", error);
+
+    // Remove the newly created account if profile creation failed.
+    if (createdUser) {
+      try {
+        await User.deleteOne({ _id: createdUser._id });
+      } catch (cleanupError) {
+        console.error("Member account cleanup error:", cleanupError);
+      }
+    }
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Email or another unique field already exists",
+      });
+    }
+
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
 
 module.exports = {
   createMember,
@@ -377,4 +538,5 @@ module.exports = {
   getMyProfile,
   createMyProfile,
   updateMyProfile,
+  createMemberAtFrontDesk,
 };

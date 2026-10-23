@@ -3,7 +3,7 @@ const express = require("express");
 const {
   createSupportRequest,
   getSupportRequests,
-  updateSupportRequest,
+  updateSupportRequestStatus,
 } = require("../controllers/supportRequestController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -14,28 +14,12 @@ const router = express.Router();
 /**
  * @swagger
  * /api/support-requests:
- *   get:
- *     summary: Get all support requests
- *     tags: [Support Requests]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Support requests retrieved successfully
- *       401:
- *         description: Authentication required
- */
-router.get(
-  "/",
-  authMiddleware,
-  getSupportRequests
-);
-
-/**
- * @swagger
- * /api/support-requests:
  *   post:
- *     summary: Create a support request
+ *     summary: Submit or log a support request
+ *     description: >
+ *       MEMBER submits their own request.
+ *       RECEPTIONIST and CENTER_MANAGER can log a request
+ *       for a specific member.
  *     tags: [Support Requests]
  *     security:
  *       - bearerAuth: []
@@ -46,15 +30,14 @@ router.get(
  *           schema:
  *             type: object
  *             required:
- *               - memberId
  *               - message
  *             properties:
- *               memberId:
- *                 type: string
- *                 example: 65abc1234567890123456789
  *               message:
  *                 type: string
- *                 example: Tôi muốn đổi lịch học sang buổi tối.
+ *                 example: I need help changing my class schedule.
+ *               memberId:
+ *                 type: string
+ *                 description: Required for staff users
  *     responses:
  *       201:
  *         description: Support request created successfully
@@ -65,20 +48,52 @@ router.get(
  *       403:
  *         description: Access denied
  *       404:
- *         description: Member not found
+ *         description: Member profile not found
  */
 router.post(
   "/",
   authMiddleware,
-  roleMiddleware("MEMBER"),
+  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
   createSupportRequest
 );
 
 /**
  * @swagger
- * /api/support-requests/{id}:
+ * /api/support-requests:
+ *   get:
+ *     summary: Get support requests
+ *     description: >
+ *       Members can see only their own requests.
+ *       Receptionists and managers can see requests across the center.
+ *     tags: [Support Requests]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, RESOLVED]
+ *         description: Optional status filter for staff users
+ *     responses:
+ *       200:
+ *         description: Support requests retrieved successfully
+ *       401:
+ *         description: Authentication required
+ */
+router.get(
+  "/",
+  authMiddleware,
+  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
+  getSupportRequests
+);
+
+/**
+ * @swagger
+ * /api/support-requests/{id}/status:
  *   put:
  *     summary: Update support request status
+ *     description: "Access: RECEPTIONIST, CENTER_MANAGER."
  *     tags: [Support Requests]
  *     security:
  *       - bearerAuth: []
@@ -88,7 +103,6 @@ router.post(
  *         required: true
  *         schema:
  *           type: string
- *         example: 65abc1234567890123456789
  *     requestBody:
  *       required: true
  *       content:
@@ -100,13 +114,11 @@ router.post(
  *             properties:
  *               status:
  *                 type: string
- *                 enum:
- *                   - PENDING
- *                   - RESOLVED
+ *                 enum: [PENDING, RESOLVED]
  *                 example: RESOLVED
  *     responses:
  *       200:
- *         description: Support request updated successfully
+ *         description: Support request status updated successfully
  *       400:
  *         description: Invalid input
  *       401:
@@ -117,13 +129,10 @@ router.post(
  *         description: Support request not found
  */
 router.put(
-  "/:id",
+  "/:id/status",
   authMiddleware,
-  roleMiddleware(
-    "CENTER_MANAGER",
-    "RECEPTIONIST"
-  ),
-  updateSupportRequest
+  roleMiddleware("RECEPTIONIST", "CENTER_MANAGER"),
+  updateSupportRequestStatus
 );
 
 module.exports = router;
