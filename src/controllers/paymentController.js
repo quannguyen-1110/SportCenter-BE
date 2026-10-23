@@ -539,7 +539,7 @@ const vnpayReturn = async (req, res) => {
     }
 
     // VNPay sends vnp_Amount in units multiplied by 100.
-    if (Number(result.vnp_Amount) !== payment.amount * 100) {
+    if (Number(result.vnp_Amount) !== Number(payment.amount)) {
       return res.status(400).json({
         success: false,
         message: "Payment amount does not match",
@@ -598,7 +598,7 @@ const vnpayIpn = async (req, res) => {
       });
     }
 
-    if (Number(result.vnp_Amount) !== payment.amount * 100) {
+    if (Number(result.vnp_Amount) !== Number(payment.amount)) {
       return res.status(200).json({
         RspCode: "04",
         Message: "Invalid amount",
