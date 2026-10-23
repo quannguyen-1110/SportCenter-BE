@@ -450,4 +450,3 @@ module.exports = {
   verifyGoogleOTP,
   getMe,
 };
-kg
