@@ -72,15 +72,30 @@ const createAttendance = async (req, res) => {
       });
     }
 
-    // Check lesson
-    const lesson = await Lesson.findById(lessonId);
+   // Check lesson
+const lesson = await Lesson.findById(lessonId);
 
-    if (!lesson) {
-      return res.status(404).json({
-        success: false,
-        message: "Lesson not found",
-      });
-    }
+if (!lesson) {
+  return res.status(404).json({
+    success: false,
+    message: "Lesson not found",
+  });
+}
+
+// Ensure the lesson belongs to the selected class
+if (!lesson.classId) {
+  return res.status(409).json({
+    success: false,
+    message: "This lesson has not been assigned to a class",
+  });
+}
+
+if (lesson.classId.toString() !== classData._id.toString()) {
+  return res.status(400).json({
+    success: false,
+    message: "The selected lesson does not belong to the selected class",
+  });
+}
 
     // Check duplicate attendance
     const existingAttendance =
@@ -182,12 +197,26 @@ const createCoachAttendance = async (req, res) => {
 
     const lesson = await Lesson.findById(schedule.lessonId);
 
-    if (!lesson) {
-      return res.status(404).json({
-        success: false,
-        message: "Lesson not found",
-      });
-    }
+if (!lesson) {
+  return res.status(404).json({
+    success: false,
+    message: "Lesson not found",
+  });
+}
+
+if (!lesson.classId) {
+  return res.status(409).json({
+    success: false,
+    message: "This lesson has not been assigned to a class",
+  });
+}
+
+if (lesson.classId.toString() !== classData._id.toString()) {
+  return res.status(400).json({
+    success: false,
+    message: "The scheduled lesson does not belong to this class",
+  });
+}
 
     const member = await Member.findById(memberId);
 
@@ -328,7 +357,29 @@ const getAttendanceByScheduleForCoach = async (req, res) => {
         message: "You are not assigned to this class",
       });
     }
+// Validate that the scheduled lesson belongs to this class
+const lesson = await Lesson.findById(schedule.lessonId);
 
+if (!lesson) {
+  return res.status(404).json({
+    success: false,
+    message: "Lesson not found",
+  });
+}
+
+if (!lesson.classId) {
+  return res.status(409).json({
+    success: false,
+    message: "This lesson has not been assigned to a class",
+  });
+}
+
+if (lesson.classId.toString() !== classData._id.toString()) {
+  return res.status(400).json({
+    success: false,
+    message: "The scheduled lesson does not belong to this class",
+  });
+}
     const attendanceDate = new Date(schedule.date);
     attendanceDate.setUTCHours(0, 0, 0, 0);
 
@@ -434,14 +485,29 @@ const updateAttendance = async (req, res) => {
     }
 
     // Check lesson
-    const lesson = await Lesson.findById(lessonId);
+const lesson = await Lesson.findById(lessonId);
 
-    if (!lesson) {
-      return res.status(404).json({
-        success: false,
-        message: "Lesson not found",
-      });
-    }
+if (!lesson) {
+  return res.status(404).json({
+    success: false,
+    message: "Lesson not found",
+  });
+}
+
+// Ensure the lesson belongs to the selected class
+if (!lesson.classId) {
+  return res.status(409).json({
+    success: false,
+    message: "This lesson has not been assigned to a class",
+  });
+}
+
+if (lesson.classId.toString() !== classData._id.toString()) {
+  return res.status(400).json({
+    success: false,
+    message: "The selected lesson does not belong to the selected class",
+  });
+}
 
     // Check duplicate attendance
     const existingAttendance =

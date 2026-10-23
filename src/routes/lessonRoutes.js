@@ -3,6 +3,7 @@ const express = require("express");
 const {
   createLesson,
   getLessons,
+  getLessonsByClass,
   updateLesson,
   deleteLesson,
 } = require("../controllers/lessonController");
@@ -16,7 +17,7 @@ const router = express.Router();
  * @swagger
  * /api/lessons:
  *   post:
- *     summary: Create a lesson
+ *     summary: Create a lesson for a class
  *     tags: [Lessons]
  *     security:
  *       - bearerAuth: []
@@ -27,12 +28,18 @@ const router = express.Router();
  *           schema:
  *             type: object
  *             required:
+ *               - classId
  *               - learningPathId
  *               - title
  *               - order
  *             properties:
+ *               classId:
+ *                 type: string
+ *                 description: ID of the class this lesson belongs to
+ *                 example: 67abc1234567890123456789
  *               learningPathId:
  *                 type: string
+ *                 description: Learning path associated with the lesson
  *                 example: 67abc1234567890123456789
  *               title:
  *                 type: string
@@ -42,20 +49,23 @@ const router = express.Router();
  *                 example: Basic yoga movements and breathing techniques
  *               order:
  *                 type: integer
+ *                 minimum: 1
  *                 example: 1
  *     responses:
  *       201:
  *         description: Lesson created successfully
  *       400:
- *         description: Invalid request
+ *         description: Invalid request or learning path does not belong to the class course
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
  *       404:
- *         description: Learning path not found
+ *         description: Class or learning path not found
  *       409:
- *         description: Lesson order already exists
+ *         description: A lesson with this order already exists in the class
+ *       500:
+ *         description: Internal server error
  */
 router.post(
   "/",
@@ -85,7 +95,38 @@ router.get(
   authMiddleware,
   getLessons
 );
-
+/**
+ * @swagger
+ * /api/lessons/class/{classId}:
+ *   get:
+ *     summary: Get all lessons belonging to a class
+ *     tags: [Lessons]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: classId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: 67abc1234567890123456789
+ *     responses:
+ *       200:
+ *         description: Lessons retrieved successfully
+ *       400:
+ *         description: Invalid class ID
+ *       401:
+ *         description: Authentication required
+ *       404:
+ *         description: Class not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/class/:classId",
+  authMiddleware,
+  getLessonsByClass
+);
 /**
  * @swagger
  * /api/lessons/{id}:
@@ -108,6 +149,10 @@ router.get(
  *           schema:
  *             type: object
  *             properties:
+ *               classId:
+ *                 type: string
+ *                 description: ID of the class this lesson belongs to
+ *                 example: 67abc1234567890123456789
  *               learningPathId:
  *                 type: string
  *                 example: 67abc1234567890123456789
@@ -119,20 +164,21 @@ router.get(
  *                 example: Advanced yoga movements and breathing techniques
  *               order:
  *                 type: integer
+ *                 minimum: 1
  *                 example: 2
  *     responses:
  *       200:
  *         description: Lesson updated successfully
  *       400:
- *         description: Invalid request
+ *         description: Invalid request or learning path does not belong to the class course
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
  *       404:
- *         description: Lesson or learning path not found
+ *         description: Lesson, class or learning path not found
  *       409:
- *         description: Lesson order already exists
+ *         description: Duplicate lesson order or lesson is used by a schedule
  *       500:
  *         description: Internal server error
  */
@@ -168,7 +214,7 @@ router.put(
  *       404:
  *         description: Lesson not found
  *       409:
- *         description: Lesson is being used by a schedule
+ *         description: Lesson is used by a schedule or has attendance records
  *       500:
  *         description: Internal server error
  */

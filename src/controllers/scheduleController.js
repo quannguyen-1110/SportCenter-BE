@@ -65,7 +65,7 @@ const populateSchedule = (query) => {
     })
     .populate({
       path: "lessonId",
-      select: "title description order learningPathId",
+      select: "title description order classId learningPathId",
     })
     .populate({
       path: "roomId",
@@ -74,6 +74,7 @@ const populateSchedule = (query) => {
 };
 
 // Validate the Class, Lesson and Room references
+
 const validateReferences = async (classId, lessonId, roomId) => {
   if (
     !isValidId(classId) ||
@@ -109,6 +110,25 @@ const validateReferences = async (classId, lessonId, roomId) => {
     };
   }
 
+  // A lesson must belong to the selected class.
+  if (!lesson.classId) {
+    return {
+      valid: false,
+      status: 409,
+      message:
+        "This lesson is not assigned to a class. Please assign it to a class first.",
+    };
+  }
+
+  if (lesson.classId.toString() !== classItem._id.toString()) {
+    return {
+      valid: false,
+      status: 400,
+      message:
+        "The selected lesson does not belong to the selected class.",
+    };
+  }
+
   if (!room) {
     return {
       valid: false,
@@ -132,6 +152,7 @@ const validateReferences = async (classId, lessonId, roomId) => {
     room,
   };
 };
+
 
 // Check whether the room has another schedule at an overlapping time
 const findRoomConflict = async ({

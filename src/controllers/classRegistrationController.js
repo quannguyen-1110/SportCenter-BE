@@ -14,6 +14,8 @@ const VALID_REGISTRATION_STATUSES = [
 
 const isValidId = (id) => mongoose.isValidObjectId(id);
 
+
+
 // CREATE class registration
 const registerClass = async (req, res) => {
   try {
@@ -79,37 +81,88 @@ const registerClass = async (req, res) => {
     }
 
     const existingRegistration = await ClassRegistration.findOne({
-      classId,
-      memberId: targetMember._id,
-    });
+  classId,
+  memberId: targetMember._id,
+});
 
-    if (existingRegistration) {
-      return res.status(409).json({
-        success: false,
-        message: "Member is already registered for this class",
-      });
-    }
+// Reject duplicate registrations unless the previous one was cancelled.
+if (
+  existingRegistration &&
+  existingRegistration.status !== "CANCELLED"
+) {
+  return res.status(409).json({
+    success: false,
+    message: "Member is already registered for this class",
+  });
+}
 
-    const registration = await ClassRegistration.create({
-      classId,
-      memberId: targetMember._id,
-      status: "PENDING_PAYMENT",
-      registeredAt: new Date(),
-    });
+// Check capacity for PERSONAL classes.
+const capacity = await checkClassCapacity(classData);
 
-    return res.status(201).json({
-      success: true,
+if (!capacity.available) {
+  return res.status(409).json({
+    success: false,
+    message: capacity.message,
+  });
+}
+
+// Reuse a cancelled registration when no payment is linked to it.
+// This avoids violating the unique classId + memberId index.
+if (existingRegistration) {
+  const previousPayment = await Payment.exists({
+    classRegistrationId: existingRegistration._id,
+  });
+
+  if (previousPayment) {
+    return res.status(409).json({
+      success: false,
       message:
-        "Class registration created. Payment is required to confirm the registration.",
-      data: {
-        id: registration._id,
-        classId: registration.classId,
-        memberId: registration.memberId,
-        status: registration.status,
-        registeredAt: registration.registeredAt,
-        createdAt: registration.createdAt,
-      },
+        "This cancelled registration has payment history. Please contact staff to register again.",
     });
+  }
+
+  existingRegistration.status = "PENDING_PAYMENT";
+  existingRegistration.registeredAt = new Date();
+
+  await existingRegistration.save();
+
+  return res.status(200).json({
+    success: true,
+    message:
+      "Cancelled registration reactivated. Payment is required to confirm the registration.",
+    data: {
+      id: existingRegistration._id,
+      classId: existingRegistration.classId,
+      memberId: existingRegistration.memberId,
+      status: existingRegistration.status,
+      registeredAt: existingRegistration.registeredAt,
+      createdAt: existingRegistration.createdAt,
+      updatedAt: existingRegistration.updatedAt,
+    },
+  });
+}
+
+// Create a new registration.
+const registration = await ClassRegistration.create({
+  classId,
+  memberId: targetMember._id,
+  status: "PENDING_PAYMENT",
+  registeredAt: new Date(),
+});
+
+return res.status(201).json({
+  success: true,
+  message:
+    "Class registration created. Payment is required to confirm the registration.",
+  data: {
+    id: registration._id,
+    classId: registration.classId,
+    memberId: registration.memberId,
+    status: registration.status,
+    registeredAt: registration.registeredAt,
+    createdAt: registration.createdAt,
+  },
+});
   } catch (error) {
     console.error("Register class error:", error);
 
@@ -297,6 +350,23 @@ const updateClassRegistration = async (req, res) => {
     const newStatus =
       status !== undefined ? status : registration.status;
 
+    // Check capacity before activating a registration.
+if (
+  ["PENDING_PAYMENT", "CONFIRMED"].includes(newStatus)
+) {
+  const capacity = await checkClassCapacity(
+    classData,
+    registration._id
+  );
+
+  if (!capacity.available) {
+    return res.status(409).json({
+      success: false,
+      message: capacity.message,
+    });
+  }
+}
+    
     // A staff member cannot confirm a registration without a successful payment.
     // Members are already blocked from setting CONFIRMED above.
     if (newStatus === "CONFIRMED") {

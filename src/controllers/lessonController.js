@@ -1,85 +1,147 @@
+const mongoose = require("mongoose");
+
 const Lesson = require("../models/Lesson");
 const LearningPath = require("../models/LearningPath");
 const Schedule = require("../models/Schedule");
+const Attendance = require("../models/Attendance");
+const Class = require("../models/Class");
 
+// Validate MongoDB ObjectId
+const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+// Validate Class and LearningPath belong to the same Course
+const validateLessonReferences = async (classId, learningPathId) => {
+  if (!isValidId(classId) || !isValidId(learningPathId)) {
+    return {
+      valid: false,
+      status: 400,
+      message: "Invalid classId or learningPathId",
+    };
+  }
+
+  const [classData, learningPath] = await Promise.all([
+    Class.findById(classId),
+    LearningPath.findById(learningPathId),
+  ]);
+
+  if (!classData) {
+    return {
+      valid: false,
+      status: 404,
+      message: "Class not found",
+    };
+  }
+
+  if (!learningPath) {
+    return {
+      valid: false,
+      status: 404,
+      message: "Learning path not found",
+    };
+  }
+
+  if (
+    !classData.courseId ||
+    !learningPath.courseId ||
+    classData.courseId.toString() !== learningPath.courseId.toString()
+  ) {
+    return {
+      valid: false,
+      status: 400,
+      message: "The learning path does not belong to the class course",
+    };
+  }
+
+  return {
+    valid: true,
+    classData,
+    learningPath,
+  };
+};
+
+// CREATE lesson
 const createLesson = async (req, res) => {
   try {
     const {
+      classId,
       learningPathId,
       title,
-      description,
+      description = "",
       order,
     } = req.body;
 
-    // Validate required fields
     if (
+      !classId ||
       !learningPathId ||
-      !title ||
-      order === undefined
+      typeof title !== "string" ||
+      !title.trim() ||
+      order === undefined ||
+      order === null
     ) {
       return res.status(400).json({
         success: false,
         message:
-          "learningPathId, title and order are required",
+          "classId, learningPathId, title and order are required",
       });
     }
 
-    // Validate order
-    if (order < 1) {
+    const lessonOrder = Number(order);
+
+    if (!Number.isInteger(lessonOrder) || lessonOrder < 1) {
       return res.status(400).json({
         success: false,
-        message:
-          "order must be greater than or equal to 1",
+        message: "order must be a positive integer",
       });
     }
 
-    // Check learning path
-    const learningPath =
-      await LearningPath.findById(learningPathId);
+    const references = await validateLessonReferences(
+      classId,
+      learningPathId
+    );
 
-    if (!learningPath) {
-      return res.status(404).json({
+    if (!references.valid) {
+      return res.status(references.status).json({
         success: false,
-        message: "Learning path not found",
+        message: references.message,
       });
     }
 
-    // Check duplicate lesson order
+    // Each Class has its own lesson order: 1, 2, 3, ...
     const existingLesson = await Lesson.findOne({
-      learningPathId,
-      order,
+      classId,
+      order: lessonOrder,
     });
 
     if (existingLesson) {
       return res.status(409).json({
         success: false,
-        message:
-          "A lesson with this order already exists in this learning path",
+        message: "A lesson with this order already exists in this class",
       });
     }
 
-    // Create lesson
     const lesson = await Lesson.create({
+      classId,
       learningPathId,
       title: title.trim(),
-      description: description || "",
-      order,
+      description:
+        typeof description === "string" ? description.trim() : "",
+      order: lessonOrder,
     });
 
     return res.status(201).json({
       success: true,
       message: "Lesson created successfully",
-      data: {
-        id: lesson._id,
-        learningPathId: lesson.learningPathId,
-        title: lesson.title,
-        description: lesson.description,
-        order: lesson.order,
-        createdAt: lesson.createdAt,
-      },
+      data: lesson,
     });
   } catch (error) {
     console.error("Create lesson error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "A lesson with this order already exists in this class",
+      });
+    }
 
     return res.status(500).json({
       success: false,
@@ -88,20 +150,24 @@ const createLesson = async (req, res) => {
   }
 };
 
-// Get all lessons
+// GET all lessons
 const getLessons = async (req, res) => {
   try {
     const lessons = await Lesson.find()
+      .populate({
+        path: "classId",
+        select: "name subjectId courseId coachId",
+      })
       .populate({
         path: "learningPathId",
         select: "name description courseId",
         populate: {
           path: "courseId",
-          select: "name description status",
+          select: "name description subjectId status",
         },
       })
       .sort({
-        learningPathId: 1,
+        classId: 1,
         order: 1,
       });
 
@@ -120,20 +186,70 @@ const getLessons = async (req, res) => {
   }
 };
 
-// Update lesson
+// GET lessons by class
+const getLessonsByClass = async (req, res) => {
+  try {
+    const { classId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid class ID",
+      });
+    }
+
+    const classData = await Class.findById(classId);
+
+    if (!classData) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found",
+      });
+    }
+
+    const lessons = await Lesson.find({ classId })
+      .populate({
+        path: "learningPathId",
+        select: "name description courseId",
+      })
+      .sort({ order: 1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Lessons retrieved successfully",
+      data: lessons,
+    });
+  } catch (error) {
+    console.error("Get lessons by class error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+// UPDATE lesson
 const updateLesson = async (req, res) => {
   try {
     const { id } = req.params;
 
+    if (!isValidId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid lesson ID",
+      });
+    }
+
     const {
+      classId,
       learningPathId,
       title,
       description,
       order,
     } = req.body;
 
-    // Validate request body
     if (
+      classId === undefined &&
       learningPathId === undefined &&
       title === undefined &&
       description === undefined &&
@@ -141,12 +257,10 @@ const updateLesson = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "At least one field is required to update",
+        message: "At least one field is required to update",
       });
     }
 
-    // Check lesson
     const lesson = await Lesson.findById(id);
 
     if (!lesson) {
@@ -156,88 +270,124 @@ const updateLesson = async (req, res) => {
       });
     }
 
-    // Determine final values
+    const finalClassId =
+      classId !== undefined ? classId : lesson.classId;
+
     const finalLearningPathId =
       learningPathId !== undefined
         ? learningPathId
         : lesson.learningPathId;
 
     const finalOrder =
-      order !== undefined
-        ? order
-        : lesson.order;
+      order !== undefined ? Number(order) : lesson.order;
 
-    // Validate order
-    if (order !== undefined && order < 1) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "order must be greater than or equal to 1",
-      });
-    }
-
-    // Check learning path
-    if (learningPathId !== undefined) {
-      const learningPath =
-        await LearningPath.findById(
-          learningPathId
-        );
-
-      if (!learningPath) {
-        return res.status(404).json({
+    if (order !== undefined) {
+      if (!Number.isInteger(finalOrder) || finalOrder < 1) {
+        return res.status(400).json({
           success: false,
-          message: "Learning path not found",
+          message: "order must be a positive integer",
         });
       }
     }
 
-    // Check duplicate lesson order
     if (
-      learningPathId !== undefined ||
-      order !== undefined
+      title !== undefined &&
+      (typeof title !== "string" || !title.trim())
     ) {
-      const existingLesson =
-        await Lesson.findOne({
-          learningPathId: finalLearningPathId,
-          order: finalOrder,
-          _id: { $ne: id },
+      return res.status(400).json({
+        success: false,
+        message: "Lesson title cannot be empty",
+      });
+    }
+
+    if (
+      description !== undefined &&
+      typeof description !== "string"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "description must be a string",
+      });
+    }
+
+    // Validate references when the lesson has a class assigned.
+    // This also allows older lessons with classId = null
+    // to be edited without immediately migrating every record.
+    if (finalClassId) {
+      const references = await validateLessonReferences(
+        finalClassId,
+        finalLearningPathId
+      );
+
+      if (!references.valid) {
+        return res.status(references.status).json({
+          success: false,
+          message: references.message,
         });
+      }
+    } else if (
+      !isValidId(finalLearningPathId) ||
+      !(await LearningPath.exists({ _id: finalLearningPathId }))
+    ) {
+      return res.status(404).json({
+        success: false,
+        message: "Learning path not found",
+      });
+    }
+
+    // Do not move a lesson to another class if schedules already use it.
+    if (
+      classId !== undefined &&
+      String(classId) !== String(lesson.classId)
+    ) {
+      const existingSchedule = await Schedule.findOne({
+        lessonId: lesson._id,
+      });
+
+      if (existingSchedule) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Cannot change the lesson class because the lesson is used by a schedule",
+        });
+      }
+    }
+
+    // Prevent duplicate order within the same class.
+    if (finalClassId) {
+      const existingLesson = await Lesson.findOne({
+        classId: finalClassId,
+        order: finalOrder,
+        _id: { $ne: lesson._id },
+      });
 
       if (existingLesson) {
         return res.status(409).json({
           success: false,
           message:
-            "A lesson with this order already exists in this learning path",
+            "A lesson with this order already exists in this class",
         });
       }
     }
 
-    // Update learning path
+    if (classId !== undefined) {
+      lesson.classId = classId;
+    }
+
     if (learningPathId !== undefined) {
-      lesson.learningPathId =
-        learningPathId;
+      lesson.learningPathId = learningPathId;
     }
 
-    // Update title
     if (title !== undefined) {
-      if (!title.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: "Lesson title cannot be empty",
-        });
-      }
-
       lesson.title = title.trim();
     }
 
-    // Update description
     if (description !== undefined) {
-      lesson.description = description;
+      lesson.description = description.trim();
     }
 
-    // Update order
     if (order !== undefined) {
-      lesson.order = order;
+      lesson.order = finalOrder;
     }
 
     await lesson.save();
@@ -245,19 +395,17 @@ const updateLesson = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Lesson updated successfully",
-      data: {
-        id: lesson._id,
-        learningPathId:
-          lesson.learningPathId,
-        title: lesson.title,
-        description: lesson.description,
-        order: lesson.order,
-        createdAt: lesson.createdAt,
-        updatedAt: lesson.updatedAt,
-      },
+      data: lesson,
     });
   } catch (error) {
     console.error("Update lesson error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "A lesson with this order already exists in this class",
+      });
+    }
 
     return res.status(500).json({
       success: false,
@@ -266,12 +414,18 @@ const updateLesson = async (req, res) => {
   }
 };
 
-// Delete lesson
+// DELETE lesson
 const deleteLesson = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check lesson
+    if (!isValidId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid lesson ID",
+      });
+    }
+
     const lesson = await Lesson.findById(id);
 
     if (!lesson) {
@@ -281,9 +435,9 @@ const deleteLesson = async (req, res) => {
       });
     }
 
-    // Check if lesson is being used by a schedule
+    // Do not delete a lesson that is used by a schedule.
     const schedule = await Schedule.findOne({
-      lessonId: id,
+      lessonId: lesson._id,
     });
 
     if (schedule) {
@@ -294,8 +448,20 @@ const deleteLesson = async (req, res) => {
       });
     }
 
-    // Delete lesson
-    await Lesson.findByIdAndDelete(id);
+    // Do not delete a lesson that has attendance records.
+    const attendance = await Attendance.findOne({
+      lessonId: lesson._id,
+    });
+
+    if (attendance) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Cannot delete lesson because it has attendance records",
+      });
+    }
+
+    await Lesson.findByIdAndDelete(lesson._id);
 
     return res.status(200).json({
       success: true,
@@ -314,6 +480,7 @@ const deleteLesson = async (req, res) => {
 module.exports = {
   createLesson,
   getLessons,
+  getLessonsByClass,
   updateLesson,
   deleteLesson,
 };

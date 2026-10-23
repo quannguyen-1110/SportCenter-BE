@@ -1,3 +1,4 @@
+
 const express = require("express");
 
 const {
@@ -14,9 +15,17 @@ const router = express.Router();
 
 /**
  * @swagger
+ * tags:
+ *   name: Courses
+ *   description: Course management APIs
+ */
+
+/**
+ * @swagger
  * /api/courses:
  *   post:
  *     summary: Create a new course
+ *     description: Create a course belonging to an existing sports subject.
  *     tags: [Courses]
  *     security:
  *       - bearerAuth: []
@@ -27,12 +36,17 @@ const router = express.Router();
  *           schema:
  *             type: object
  *             required:
+ *               - subjectId
  *               - name
  *               - price
  *             properties:
+ *               subjectId:
+ *                 type: string
+ *                 description: ID of the sports subject this course belongs to.
+ *                 example: "65abc12345678901234567890"
  *               name:
  *                 type: string
- *                 example: Yoga
+ *                 example: Yoga Basic
  *               description:
  *                 type: string
  *                 example: Basic yoga training course
@@ -49,13 +63,15 @@ const router = express.Router();
  *       201:
  *         description: Course created successfully
  *       400:
- *         description: Invalid request
+ *         description: Invalid subjectId, name, price, or status
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
+ *       404:
+ *         description: Subject not found
  *       409:
- *         description: Course name already exists
+ *         description: Conflict with an existing unique field
  *       500:
  *         description: Internal server error
  */
@@ -70,7 +86,7 @@ router.post(
  * @swagger
  * /api/courses:
  *   get:
- *     summary: Get all courses including prices
+ *     summary: Get all courses including prices and subjects
  *     tags: [Courses]
  *     security:
  *       - bearerAuth: []
@@ -92,7 +108,8 @@ router.get(
  * @swagger
  * /api/courses/{id}:
  *   put:
- *     summary: Update course information or price
+ *     summary: Update course information
+ *     description: Update the course name, subject, description, price, or status.
  *     tags: [Courses]
  *     security:
  *       - bearerAuth: []
@@ -100,10 +117,10 @@ router.get(
  *       - in: path
  *         name: id
  *         required: true
+ *         description: Course ID
  *         schema:
  *           type: string
- *         description: Course ID
- *         example: 67abc1234567890123456789
+ *         example: "65abc12345678901234567890"
  *     requestBody:
  *       required: true
  *       content:
@@ -111,6 +128,10 @@ router.get(
  *           schema:
  *             type: object
  *             properties:
+ *               subjectId:
+ *                 type: string
+ *                 description: ID of the new sports subject.
+ *                 example: "65def12345678901234567890"
  *               name:
  *                 type: string
  *                 example: Yoga Advanced
@@ -129,13 +150,13 @@ router.get(
  *       200:
  *         description: Course updated successfully
  *       400:
- *         description: Invalid request or price
+ *         description: Invalid course ID or request data
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
  *       404:
- *         description: Course not found
+ *         description: Course or subject not found
  *       409:
  *         description: Course name already exists
  *       500:
@@ -153,6 +174,7 @@ router.put(
  * /api/courses/{id}:
  *   delete:
  *     summary: Delete a course
+ *     description: A course cannot be deleted while used by a class or learning path.
  *     tags: [Courses]
  *     security:
  *       - bearerAuth: []
@@ -160,10 +182,10 @@ router.put(
  *       - in: path
  *         name: id
  *         required: true
+ *         description: Course ID
  *         schema:
  *           type: string
- *         description: Course ID
- *         example: 67abc1234567890123456789
+ *         example: "65abc12345678901234567890"
  *     responses:
  *       200:
  *         description: Course deleted successfully
@@ -176,7 +198,7 @@ router.put(
  *       404:
  *         description: Course not found
  *       409:
- *         description: Course is being used by a learning path
+ *         description: Course is being used by a class or learning path
  *       500:
  *         description: Internal server error
  */

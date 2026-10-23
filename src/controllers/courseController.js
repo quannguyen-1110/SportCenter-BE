@@ -1,17 +1,57 @@
+
 const mongoose = require("mongoose");
+
 const Course = require("../models/Course");
+const Subject = require("../models/Subject");
+const Class = require("../models/Class");
 const LearningPath = require("../models/LearningPath");
 
-// CREATE course
+// ==========================================
+// CREATE COURSE
+// POST /api/courses
+// ==========================================
 const createCourse = async (req, res) => {
   try {
-    const { name, description, price, status } = req.body;
+    const { subjectId, name, description, price, status } = req.body;
+
+    // Validate subjectId
+    if (!subjectId || !mongoose.isValidObjectId(subjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid subjectId is required",
+      });
+    }
+
+    const subject = await Subject.findById(subjectId);
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: "Subject not found",
+      });
+    }
 
     // Validate name
     if (typeof name !== "string" || !name.trim()) {
       return res.status(400).json({
         success: false,
         message: "name is required",
+      });
+    }
+
+    if (description !== undefined && typeof description !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "description must be a string",
+      });
+    }
+
+    // Keep CREATE and UPDATE consistent: course names are unique globally.
+    const existingCourse = await Course.findOne({ name: name.trim() });
+    if (existingCourse) {
+      return res.status(409).json({
+        success: false,
+        message: "Course name already exists",
       });
     }
 
@@ -39,6 +79,7 @@ const createCourse = async (req, res) => {
     }
 
     const course = await Course.create({
+      subjectId,
       name: name.trim(),
       description:
         typeof description === "string" ? description.trim() : "",
@@ -51,6 +92,7 @@ const createCourse = async (req, res) => {
       message: "Course created successfully",
       data: {
         id: course._id,
+        subjectId: course.subjectId,
         name: course.name,
         description: course.description,
         price: course.price,
@@ -64,7 +106,14 @@ const createCourse = async (req, res) => {
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Course name already exists",
+        message: "Course already exists with a conflicting unique field",
+      });
+    }
+
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
       });
     }
 
@@ -75,11 +124,17 @@ const createCourse = async (req, res) => {
   }
 };
 
-// GET all courses
+// ==========================================
+// GET ALL COURSES
+// GET /api/courses
+// ==========================================
 const getCourses = async (req, res) => {
   try {
     const courses = await Course.find()
-      .select("_id name description price status createdAt updatedAt")
+      .select(
+        "_id subjectId name description price status createdAt updatedAt"
+      )
+      .populate("subjectId", "name")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -97,13 +152,16 @@ const getCourses = async (req, res) => {
   }
 };
 
-// UPDATE course
+// ==========================================
+// UPDATE COURSE
+// PUT /api/courses/:id
+// ==========================================
 const updateCourse = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, price, status } = req.body;
+    const { subjectId, name, description, price, status } = req.body;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid course ID",
@@ -112,6 +170,7 @@ const updateCourse = async (req, res) => {
 
     // Validate request body
     if (
+      subjectId === undefined &&
       name === undefined &&
       description === undefined &&
       price === undefined &&
@@ -130,6 +189,43 @@ const updateCourse = async (req, res) => {
         success: false,
         message: "Course not found",
       });
+    }
+
+    // Update subjectId
+    if (subjectId !== undefined) {
+      if (!mongoose.isValidObjectId(subjectId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid subjectId",
+        });
+      }
+
+      const subject = await Subject.findById(subjectId);
+
+      if (!subject) {
+        return res.status(404).json({
+          success: false,
+          message: "Subject not found",
+        });
+      }
+
+      // Class stores subjectId as well as courseId. Prevent making those values
+      // inconsistent by reassigning a course that is already used by a class.
+      if (
+        !course.subjectId ||
+        course.subjectId.toString() !== subjectId.toString()
+      ) {
+        const existingClass = await Class.findOne({ courseId: course._id });
+        if (existingClass) {
+          return res.status(409).json({
+            success: false,
+            message:
+              "Cannot change the subject of a course while it is assigned to a class",
+          });
+        }
+      }
+
+      course.subjectId = subjectId;
     }
 
     // Update name
@@ -197,12 +293,14 @@ const updateCourse = async (req, res) => {
     }
 
     await course.save();
+    await course.populate("subjectId", "name");
 
     return res.status(200).json({
       success: true,
       message: "Course updated successfully",
       data: {
         id: course._id,
+        subjectId: course.subjectId,
         name: course.name,
         description: course.description,
         price: course.price,
@@ -221,6 +319,13 @@ const updateCourse = async (req, res) => {
       });
     }
 
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -228,12 +333,15 @@ const updateCourse = async (req, res) => {
   }
 };
 
-// DELETE course
+// ==========================================
+// DELETE COURSE
+// DELETE /api/courses/:id
+// ==========================================
 const deleteCourse = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid course ID",
@@ -249,7 +357,19 @@ const deleteCourse = async (req, res) => {
       });
     }
 
-    // Check whether the course is used by a learning path
+    // Prevent deleting a course used by a class.
+    const existingClass = await Class.findOne({
+      courseId: id,
+    });
+
+    if (existingClass) {
+      return res.status(409).json({
+        success: false,
+        message: "Cannot delete course because it is being used by a class",
+      });
+    }
+
+    // Prevent deleting a course used by a learning path.
     const learningPath = await LearningPath.findOne({
       courseId: id,
     });
