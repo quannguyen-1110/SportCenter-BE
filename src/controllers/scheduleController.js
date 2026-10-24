@@ -881,4 +881,5 @@ module.exports = {
   getMyCoachSchedules,
   updateSchedule,
   deleteSchedule,
+  importSchedules,
 };
