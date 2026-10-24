@@ -7,6 +7,7 @@ const Coach = require("../models/Coach");
 const Class = require("../models/Class");
 const Lesson = require("../models/Lesson");
 const Room = require("../models/Room");
+const XLSX = require("xlsx");
 
 const VALID_STATUSES = ["SCHEDULED", "COMPLETED", "CANCELLED"];
 
@@ -604,7 +605,275 @@ const deleteSchedule = async (req, res) => {
     });
   }
 };
+// IMPORT schedules from Excel
+const importSchedules = async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({
+        success: false,
+        message: "Please upload an Excel file",
+      });
+    }
 
+    const workbook = XLSX.read(req.file.buffer, {
+      type: "buffer",
+      cellDates: true,
+    });
+
+    const firstSheetName = workbook.SheetNames[0];
+
+    if (!firstSheetName) {
+      return res.status(400).json({
+        success: false,
+        message: "The Excel file has no worksheet",
+      });
+    }
+
+    const worksheet = workbook.Sheets[firstSheetName];
+
+    const rows = XLSX.utils.sheet_to_json(worksheet, {
+      defval: "",
+      raw: true,
+    });
+
+    if (rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "The Excel file contains no schedule data",
+      });
+    }
+
+    const requiredColumns = [
+      "classId",
+      "lessonId",
+      "roomId",
+      "date",
+      "startTime",
+      "endTime",
+    ];
+
+    const actualColumns = Object.keys(rows[0]);
+
+    const missingColumns = requiredColumns.filter(
+      (column) => !actualColumns.includes(column)
+    );
+
+    if (missingColumns.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Excel template",
+        missingColumns,
+      });
+    }
+
+    if (rows.length > 1000) {
+      return res.status(400).json({
+        success: false,
+        message: "A maximum of 1000 schedule rows is allowed per import",
+      });
+    }
+
+    // Parse dates from Excel.
+    // Accepted formats: Excel date cells or YYYY-MM-DD text.
+    const parseExcelDate = (value) => {
+      if (value instanceof Date) {
+        if (Number.isNaN(value.getTime())) return null;
+
+        return new Date(
+          Date.UTC(
+            value.getUTCFullYear(),
+            value.getUTCMonth(),
+            value.getUTCDate()
+          )
+        );
+      }
+
+      if (typeof value === "number") {
+        const parsed = XLSX.SSF.parse_date_code(value);
+
+        if (!parsed) return null;
+
+        return new Date(
+          Date.UTC(parsed.y, parsed.m - 1, parsed.d)
+        );
+      }
+
+      if (
+        typeof value === "string" &&
+        /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
+      ) {
+        const text = value.trim();
+        const parsed = new Date(`${text}T00:00:00.000Z`);
+
+        if (
+          Number.isNaN(parsed.getTime()) ||
+          parsed.toISOString().slice(0, 10) !== text
+        ) {
+          return null;
+        }
+
+        return parsed;
+      }
+
+      return null;
+    };
+
+    const importedSchedules = [];
+    const errors = [];
+
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index];
+      const excelRow = index + 2;
+
+      // Ignore completely empty rows.
+      const hasData = Object.values(row).some(
+        (value) => String(value).trim() !== ""
+      );
+
+      if (!hasData) continue;
+
+      try {
+        const classId = String(row.classId).trim();
+        const lessonId = String(row.lessonId).trim();
+        const roomId = String(row.roomId).trim();
+        const startTime = String(row.startTime).trim();
+        const endTime = String(row.endTime).trim();
+
+        const status = String(row.status || "SCHEDULED")
+          .trim()
+          .toUpperCase();
+
+        const date = parseExcelDate(row.date);
+
+        if (
+          !classId ||
+          !lessonId ||
+          !roomId ||
+          !row.date ||
+          !startTime ||
+          !endTime
+        ) {
+          errors.push({
+            row: excelRow,
+            message: "Missing required data",
+          });
+          continue;
+        }
+
+        if (
+          !isValidTime(startTime) ||
+          !isValidTime(endTime) ||
+          startTime >= endTime
+        ) {
+          errors.push({
+            row: excelRow,
+            message:
+              "Invalid time. Use HH:mm and ensure startTime is earlier than endTime",
+          });
+          continue;
+        }
+
+        if (!date) {
+          errors.push({
+            row: excelRow,
+            message: "Invalid date. Use an Excel date cell or YYYY-MM-DD",
+          });
+          continue;
+        }
+
+        if (!VALID_STATUSES.includes(status)) {
+          errors.push({
+            row: excelRow,
+            message: "Invalid status",
+          });
+          continue;
+        }
+
+        const references = await validateReferences(
+          classId,
+          lessonId,
+          roomId
+        );
+
+        if (!references.valid) {
+          errors.push({
+            row: excelRow,
+            message: references.message,
+          });
+          continue;
+        }
+
+        // Check conflicts with existing schedules.
+        // Earlier successful rows in this import are also checked,
+        // because they are already saved in the database.
+        if (status !== "CANCELLED") {
+          const conflict = await findRoomConflict({
+            roomId,
+            date,
+            startTime,
+            endTime,
+          });
+
+          if (conflict) {
+            errors.push({
+              row: excelRow,
+              message: "Room has an overlapping schedule",
+              conflictingScheduleId: conflict._id,
+            });
+            continue;
+          }
+        }
+
+        const schedule = await Schedule.create({
+          classId,
+          lessonId,
+          roomId,
+          date,
+          startTime,
+          endTime,
+          status,
+        });
+
+        importedSchedules.push({
+          row: excelRow,
+          scheduleId: schedule._id,
+        });
+      } catch (rowError) {
+        console.error(
+          `Import schedule row ${excelRow} error:`,
+          rowError
+        );
+
+        errors.push({
+          row: excelRow,
+          message: "Failed to import this row",
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        errors.length === 0
+          ? "Schedules imported successfully"
+          : "Import completed with some errors",
+      data: {
+        totalRows: importedSchedules.length + errors.length,
+        successCount: importedSchedules.length,
+        errorCount: errors.length,
+        importedSchedules,
+        errors,
+      },
+    });
+  } catch (error) {
+    console.error("Import schedules error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to import schedules",
+    });
+  }
+};
 module.exports = {
   createSchedule,
   getSchedules,

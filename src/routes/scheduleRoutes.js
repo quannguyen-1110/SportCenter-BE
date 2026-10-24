@@ -1,5 +1,7 @@
 
 const express = require("express");
+const multer = require("multer");
+const path = require("path");
 
 const {
   createSchedule,
@@ -8,6 +10,7 @@ const {
   getMyCoachSchedules,
   updateSchedule,
   deleteSchedule,
+  importSchedules,
 } = require("../controllers/scheduleController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -15,6 +18,35 @@ const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
 
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5 MB
+  },
+  fileFilter: (req, file, callback) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+
+    if (extension !== ".xlsx") {
+      return callback(new Error("Only .xlsx Excel files are allowed"));
+    }
+
+    callback(null, true);
+  },
+});
+
+// Return upload errors as JSON
+const uploadExcel = (req, res, next) => {
+  upload.single("file")(req, res, (error) => {
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.message || "Invalid Excel file",
+      });
+    }
+
+    next();
+  });
+};
 /**
  * @swagger
  * /api/schedules:
@@ -174,7 +206,47 @@ router.get(
   roleMiddleware("COACH"),
   getMyCoachSchedules
 );
-
+/**
+ * @swagger
+ * /api/schedules/import:
+ *   post:
+ *     summary: Import schedules from Excel
+ *     description: Only CENTER_MANAGER can import schedules.
+ *     tags: [Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Excel file (.xlsx), maximum 5 MB
+ *     responses:
+ *       200:
+ *         description: Import completed, including any row errors
+ *       400:
+ *         description: Invalid file or Excel data
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Import failed
+ */
+router.post(
+  "/import",
+  authMiddleware,
+  roleMiddleware("CENTER_MANAGER"),
+  uploadExcel,
+  importSchedules
+);
 /**
  * @swagger
  * /api/schedules/{id}:
