@@ -893,7 +893,85 @@ const getPaymentReceipt = async (req, res) => {
     });
   }
 };
+// GET payment status by ID
+const getPaymentStatusById = async (req, res) => {
+  try {
+    const { id } = req.params;
 
+    // Validate payment ID
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment ID",
+      });
+    }
+
+    // Find payment
+    const payment = await Payment.findById(id).select(
+      "_id classRegistrationId status paymentDate"
+    );
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found",
+      });
+    }
+
+    // Find related class registration
+    const registration = await ClassRegistration.findById(
+      payment.classRegistrationId
+    ).select("memberId status");
+
+    if (!registration) {
+      return res.status(404).json({
+        success: false,
+        message: "Class registration not found",
+      });
+    }
+
+    // MEMBER can only check their own payment
+    if (req.user.role === "MEMBER") {
+      const member = await Member.findOne({
+        userId: req.user.userId,
+      }).select("_id");
+
+      if (!member) {
+        return res.status(404).json({
+          success: false,
+          message: "Member profile not found",
+        });
+      }
+
+      if (
+        registration.memberId.toString() !== member._id.toString()
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "You cannot access this payment",
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment status retrieved successfully",
+      data: {
+        paymentId: payment._id,
+        status: payment.status,
+        paymentDate: payment.paymentDate,
+        registrationStatus: registration.status,
+      },
+    });
+  } catch (error) {
+    console.error("Get payment status error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
 module.exports = {
   createPayment,
   getPayments,
@@ -904,4 +982,5 @@ module.exports = {
   vnpayIpn,
   recordOfflinePayment,
   getPaymentReceipt,
+  getPaymentStatusById,
 };

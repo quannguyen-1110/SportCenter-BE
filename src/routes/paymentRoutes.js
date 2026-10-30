@@ -10,6 +10,7 @@ const {
   vnpayIpn,
   recordOfflinePayment,
   getPaymentReceipt,
+  getPaymentStatusById,
 } = require("../controllers/paymentController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -32,7 +33,49 @@ const router = express.Router();
  *         description: Authentication required
  */
 router.get("/", authMiddleware, getPayments);
-
+/**
+ * @swagger
+ * /api/payments/{id}/status:
+ *   get:
+ *     summary: Get payment status by ID
+ *     description: |
+ *       MEMBER can only check their own payment.
+ *       RECEPTIONIST and CENTER_MANAGER can check payments by ID.
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Payment ID
+ *         example: 67abc1234567890123456789
+ *     responses:
+ *       200:
+ *         description: Payment status retrieved successfully
+ *       400:
+ *         description: Invalid payment ID
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Payment or class registration not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/:id/status",
+  authMiddleware,
+  roleMiddleware(
+    "MEMBER",
+    "RECEPTIONIST",
+    "CENTER_MANAGER"
+  ),
+  getPaymentStatusById
+);
 /**
  * @swagger
  * /api/payments:
