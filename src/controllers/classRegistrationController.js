@@ -14,6 +14,45 @@ const VALID_REGISTRATION_STATUSES = [
 
 const isValidId = (id) => mongoose.isValidObjectId(id);
 
+const ACTIVE_REGISTRATION_STATUSES = [
+  "PENDING_PAYMENT",
+  "CONFIRMED",
+];
+
+// Check capacity for GROUP and PERSONAL classes
+const checkClassCapacity = async (
+  classData,
+  excludeRegistrationId = null
+) => {
+  // GROUP classes allow multiple registrations.
+  // Old classes without classType are treated as GROUP.
+  if ((classData.classType || "GROUP") !== "PERSONAL") {
+    return { available: true };
+  }
+
+  const filter = {
+    classId: classData._id,
+    status: { $in: ACTIVE_REGISTRATION_STATUSES },
+  };
+
+  // Exclude the current registration when updating it.
+  if (excludeRegistrationId) {
+    filter._id = { $ne: excludeRegistrationId };
+  }
+
+  const activeRegistration = await ClassRegistration.findOne(filter);
+
+  if (activeRegistration) {
+    return {
+      available: false,
+      message:
+        "This personal class already has a pending or confirmed member",
+    };
+  }
+
+  return { available: true };
+};
+
 
 
 // CREATE class registration
@@ -446,4 +485,5 @@ module.exports = {
   registerClass,
   getClassRegistrations,
   updateClassRegistration,
+  checkClassCapacity,
 };
