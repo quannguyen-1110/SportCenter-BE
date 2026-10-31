@@ -1,3 +1,4 @@
+
 const express = require("express");
 
 const {
@@ -18,15 +19,32 @@ const router = express.Router();
  * @swagger
  * /api/coaches:
  *   get:
- *     summary: Get all coaches
+ *     summary: Get all coaches or filter coaches by subject
+ *     description: |
+ *       Get all coaches when subjectId is omitted.
+ *       Filter coaches by one sport subject when subjectId is provided.
  *     tags: [Coaches]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: subjectId
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: ID of the sport subject
+ *         example: 6ab6878512d539c14ac93547
  *     responses:
  *       200:
  *         description: Coaches retrieved successfully
+ *       400:
+ *         description: Invalid subjectId
  *       401:
  *         description: Authentication required
+ *       404:
+ *         description: Subject not found
+ *       500:
+ *         description: Internal server error
  */
 router.get("/", authMiddleware, getCoaches);
 
@@ -35,6 +53,7 @@ router.get("/", authMiddleware, getCoaches);
  * /api/coaches:
  *   post:
  *     summary: Create a coach profile
+ *     description: Each coach is assigned to exactly one sport subject.
  *     tags: [Coaches]
  *     security:
  *       - bearerAuth: []
@@ -48,6 +67,7 @@ router.get("/", authMiddleware, getCoaches);
  *               - userId
  *               - fullName
  *               - phone
+ *               - subjectId
  *             properties:
  *               userId:
  *                 type: string
@@ -58,19 +78,25 @@ router.get("/", authMiddleware, getCoaches);
  *               phone:
  *                 type: string
  *                 example: "0901234567"
+ *               subjectId:
+ *                 type: string
+ *                 description: Sport subject ID assigned to this coach
+ *                 example: 6ab6878512d539c14ac93548
  *     responses:
  *       201:
  *         description: Coach created successfully
  *       400:
- *         description: Invalid input
+ *         description: Invalid input or User role must be COACH
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
  *       404:
- *         description: User not found
+ *         description: User or Subject not found
  *       409:
  *         description: Coach profile already exists
+ *       500:
+ *         description: Internal server error
  */
 router.post(
   "/",
@@ -106,6 +132,7 @@ router.get(
   roleMiddleware("COACH"),
   getMyCoachProfile
 );
+
 /**
  * @swagger
  * /api/coaches/my-students:
@@ -139,11 +166,13 @@ router.get(
   roleMiddleware("COACH"),
   getMyStudents
 );
+
 /**
  * @swagger
  * /api/coaches/{id}:
  *   put:
  *     summary: Update a coach profile
+ *     description: Update coach information and/or assigned sport subject.
  *     tags: [Coaches]
  *     security:
  *       - bearerAuth: []
@@ -160,9 +189,7 @@ router.get(
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - fullName
- *               - phone
+ *             description: Provide at least one field to update.
  *             properties:
  *               fullName:
  *                 type: string
@@ -170,6 +197,10 @@ router.get(
  *               phone:
  *                 type: string
  *                 example: "0912345678"
+ *               subjectId:
+ *                 type: string
+ *                 description: New sport subject ID
+ *                 example: 6ab6878512d539c14ac93548
  *     responses:
  *       200:
  *         description: Coach updated successfully
@@ -180,7 +211,9 @@ router.get(
  *       403:
  *         description: Access denied
  *       404:
- *         description: Coach not found
+ *         description: Coach or Subject not found
+ *       500:
+ *         description: Internal server error
  */
 router.put(
   "/:id",
@@ -207,12 +240,16 @@ router.put(
  *     responses:
  *       200:
  *         description: Coach deleted successfully
+ *       400:
+ *         description: Invalid coach ID
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
  *       404:
  *         description: Coach not found
+ *       500:
+ *         description: Internal server error
  */
 router.delete(
   "/:id",

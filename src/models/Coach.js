@@ -20,6 +20,14 @@ const coachSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+
+    // Mỗi HLV chỉ phụ trách một môn thể thao
+    subjectId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Subject",
+      required: true,
+      index: true,
+    },
   },
   {
     timestamps: true,
