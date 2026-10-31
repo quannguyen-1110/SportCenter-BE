@@ -173,10 +173,31 @@ return res.status(201).json({
   }
 };
 
-// GET all class registrations
+
+// GET class registrations
+// MEMBER: only their own registrations
+// RECEPTIONIST and CENTER_MANAGER: all registrations
 const getClassRegistrations = async (req, res) => {
   try {
-    const registrations = await ClassRegistration.find()
+    let filter = {};
+
+    if (req.user.role === "MEMBER") {
+      const userId = req.user.userId || req.user._id;
+
+      const member = await Member.findOne({ userId });
+
+      if (!member) {
+        return res.status(404).json({
+          success: false,
+          message: "Member profile not found",
+        });
+      }
+
+      // Only retrieve registrations belonging to this member
+      filter.memberId = member._id;
+    }
+
+    const registrations = await ClassRegistration.find(filter)
       .populate("memberId", "fullName phone goal level")
       .populate("classId", "name subjectId courseId coachId")
       .sort({ createdAt: -1 });

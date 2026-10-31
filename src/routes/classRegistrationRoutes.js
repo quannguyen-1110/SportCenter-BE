@@ -17,7 +17,8 @@ const router = express.Router();
  * /api/class-registrations:
  *   get:
  *     summary: Get all class registrations
- *     description: Access CENTER_MANAGER and RECEPTIONIST only.
+ *     description:  MEMBER can only view their own registrations.
+ *      RECEPTIONIST and CENTER_MANAGER can view all registrations.
  *     tags: [Class Registrations]
  *     security:
  *       - bearerAuth: []
@@ -34,7 +35,7 @@ const router = express.Router();
 router.get(
   "/",
   authMiddleware,
-  roleMiddleware("CENTER_MANAGER", "RECEPTIONIST"),
+  roleMiddleware("MEMBER", "CENTER_MANAGER", "RECEPTIONIST"),
   getClassRegistrations
 );
 
