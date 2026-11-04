@@ -9,7 +9,17 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+fullName: {
+  type: String,
+  trim: true,
+  default: "",
+},
 
+phone: {
+  type: String,
+  trim: true,
+  default: "",
+},
     passwordHash: {
   type: String,
   required: function () {

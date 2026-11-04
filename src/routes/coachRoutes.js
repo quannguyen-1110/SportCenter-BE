@@ -8,6 +8,7 @@ const {
   deleteCoach,
   getMyCoachProfile,
   getMyStudents,
+  updateMyCoachProfile,
 } = require("../controllers/coachController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -132,7 +133,48 @@ router.get(
   roleMiddleware("COACH"),
   getMyCoachProfile
 );
-
+/**
+ * @swagger
+ * /api/coaches/me:
+ *   patch:
+ *     summary: Update my coach profile
+ *     description: COACH can update their own fullName and phone only.
+ *     tags: [Coaches]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fullName:
+ *                 type: string
+ *                 example: Nguyen Van A
+ *               phone:
+ *                 type: string
+ *                 example: "0901234567"
+ *     responses:
+ *       200:
+ *         description: Coach profile updated successfully
+ *       400:
+ *         description: Invalid input
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied - COACH role required
+ *       404:
+ *         description: Coach profile not found
+ *       500:
+ *         description: Internal server error
+ */
+router.patch(
+  "/me",
+  authMiddleware,
+  roleMiddleware("COACH"),
+  updateMyCoachProfile
+);
 /**
  * @swagger
  * /api/coaches/my-students:

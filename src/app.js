@@ -24,6 +24,7 @@ const lessonRoutes = require("./routes/lessonRoutes");
 const lessonProgressRoutes = require("./routes/lessonProgressRoutes");
 const roomRoutes = require("./routes/roomRoutes");
 const homeworkRoutes = require("./routes/homeworkRoutes");
+const staffRoutes = require("./routes/staffRoutes");
 
 const app = express();
 
@@ -52,6 +53,7 @@ app.use("/api/lessons", lessonRoutes);
 app.use("/api/lesson-progress", lessonProgressRoutes);
 app.use("/api/rooms", roomRoutes);
 app.use("/api/homeworks", homeworkRoutes);
+app.use("/api/staff", staffRoutes);
 // Swagger
 app.use(
   "/api-docs",

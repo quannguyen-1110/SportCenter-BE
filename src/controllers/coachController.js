@@ -373,7 +373,131 @@ const getMyCoachProfile = async (req, res) => {
     });
   }
 };
+// UPDATE my coach profile
+const updateMyCoachProfile = async (req, res) => {
+  let session;
 
+  try {
+    const userId = req.user.userId || req.user._id;
+    const body = req.body || {};
+
+    // Only allow fullName and phone
+    const allowedFields = ["fullName", "phone"];
+
+    const invalidFields = Object.keys(body).filter(
+      (field) => !allowedFields.includes(field)
+    );
+
+    if (invalidFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `You cannot update: ${invalidFields.join(", ")}`,
+      });
+    }
+
+    const updates = {};
+
+    if (body.fullName !== undefined) {
+      if (
+        typeof body.fullName !== "string" ||
+        !body.fullName.trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "fullName must be a non-empty string",
+        });
+      }
+
+      updates.fullName = body.fullName.trim();
+    }
+
+    if (body.phone !== undefined) {
+      if (
+        typeof body.phone !== "string" ||
+        !body.phone.trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "phone must be a non-empty string",
+        });
+      }
+
+      updates.phone = body.phone.trim();
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide fullName or phone",
+      });
+    }
+
+    session = await mongoose.startSession();
+
+    let updatedCoachId;
+
+    await session.withTransaction(async () => {
+      const user = await User.findById(userId).session(session);
+
+      if (!user) {
+        const error = new Error("User not found");
+        error.statusCode = 404;
+        throw error;
+      }
+
+      if (user.role !== "COACH") {
+        const error = new Error("Only COACH can update this profile");
+        error.statusCode = 403;
+        throw error;
+      }
+
+      if (user.status !== "ACTIVE") {
+        const error = new Error("Account is inactive");
+        error.statusCode = 403;
+        throw error;
+      }
+
+      const coach = await Coach.findOne({ userId }).session(session);
+
+      if (!coach) {
+        const error = new Error("Coach profile not found");
+        error.statusCode = 404;
+        throw error;
+      }
+
+      // Update User collection
+      Object.assign(user, updates);
+      await user.save({ session });
+
+      // Update Coach collection
+      Object.assign(coach, updates);
+      await coach.save({ session });
+
+      updatedCoachId = coach._id;
+    });
+
+    const updatedCoach = await Coach.findById(updatedCoachId)
+      .select("_id userId fullName phone subjectId createdAt updatedAt")
+      .populate("subjectId");
+
+    return res.status(200).json({
+      success: true,
+      message: "Your coach profile has been updated successfully",
+      data: updatedCoach,
+    });
+  } catch (error) {
+    console.error("Update my coach profile error:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
+  }
+};
 module.exports = {
   createCoach,
   getCoaches,
@@ -381,4 +505,5 @@ module.exports = {
   deleteCoach,
   getMyCoachProfile,
   getMyStudents,
+  updateMyCoachProfile,
 };
