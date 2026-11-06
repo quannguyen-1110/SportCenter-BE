@@ -1,6 +1,22 @@
 
 const mongoose = require("mongoose");
 
+const pricingSchema = new mongoose.Schema(
+  {
+    personal: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    group: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+  },
+  { _id: false }
+);
+
 const courseSchema = new mongoose.Schema(
   {
     subjectId: {
@@ -22,11 +38,10 @@ const courseSchema = new mongoose.Schema(
       default: "",
     },
 
-    price: {
-      type: Number,
+    // One-time price for the entire course
+    pricing: {
+      type: pricingSchema,
       required: true,
-      min: 0,
-      default: 0,
     },
 
     status: {

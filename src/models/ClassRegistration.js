@@ -1,3 +1,4 @@
+
 const mongoose = require("mongoose");
 
 const classRegistrationSchema = new mongoose.Schema(
@@ -20,6 +21,13 @@ const classRegistrationSchema = new mongoose.Schema(
       default: "PENDING_PAYMENT",
     },
 
+    // Course price at the time the member registers
+    priceSnapshot: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
     registeredAt: {
       type: Date,
       default: Date.now,
@@ -31,7 +39,7 @@ const classRegistrationSchema = new mongoose.Schema(
   }
 );
 
-// Một member không được đăng ký cùng một class nhiều lần
+// A member cannot register for the same class more than once
 classRegistrationSchema.index(
   { classId: 1, memberId: 1 },
   { unique: true }

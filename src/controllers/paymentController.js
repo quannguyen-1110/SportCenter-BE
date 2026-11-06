@@ -2,8 +2,6 @@ const Payment = require("../models/Payment");
 const ClassRegistration = require("../models/ClassRegistration");
 const Member = require("../models/Member");
 const { VNPay, ProductCode, VnpLocale } = require("vnpay");
-const Class = require("../models/Class");
-const Course = require("../models/Course");
 const mongoose = require("mongoose");
 
 const vnpay = new VNPay({
@@ -15,8 +13,6 @@ const vnpay = new VNPay({
 });
 
 // CREATE payment
-
-
 const createPayment = async (req, res) => {
   try {
     const { classRegistrationId, paymentMethod } = req.body;
@@ -38,7 +34,26 @@ const createPayment = async (req, res) => {
         message: "Class registration not found",
       });
     }
+// MEMBER can only create payment for their own registration.
+if (req.user.role === "MEMBER") {
+  const member = await Member.findOne({
+    userId: req.user.userId,
+  });
 
+  if (!member) {
+    return res.status(404).json({
+      success: false,
+      message: "Member profile not found",
+    });
+  }
+
+  if (classRegistration.memberId.toString() !== member._id.toString()) {
+    return res.status(403).json({
+      success: false,
+      message: "You cannot create payment for another member's registration",
+    });
+  }
+}
     if (classRegistration.status === "CANCELLED") {
       return res.status(400).json({
         success: false,
@@ -61,40 +76,35 @@ const createPayment = async (req, res) => {
         message: "paymentMethod must be CASH, BANK_TRANSFER or ONLINE",
       });
     }
+// Prevent duplicate pending or successful payments.
+const existingPayment = await Payment.findOne({
+  classRegistrationId: classRegistration._id,
+  status: { $in: ["PENDING", "SUCCESS"] },
+});
 
-    // Get the class from the registration.
-    const classInfo = await Class.findById(classRegistration.classId);
-
-    if (!classInfo) {
-      return res.status(404).json({
-        success: false,
-        message: "Class not found",
-      });
-    }
-
-    // Get the actual course price from the database.
-    const course = await Course.findById(classInfo.courseId);
-
-    if (!course) {
-      return res.status(404).json({
-        success: false,
-        message: "Course not found",
-      });
-    }
+if (existingPayment) {
+  return res.status(409).json({
+    success: false,
+    message: "A pending or successful payment already exists for this registration",
+    data: {
+      paymentId: existingPayment._id,
+      status: existingPayment.status,
+    },
+  });
+}
+    // Use the price saved when the member registered for the class.
+    const amount = classRegistration.priceSnapshot;
 
     if (
-      typeof course.price !== "number" ||
-      !Number.isFinite(course.price) ||
-      course.price <= 0
+      typeof amount !== "number" ||
+      !Number.isFinite(amount) ||
+      amount <= 0
     ) {
       return res.status(400).json({
         success: false,
-        message: "Course price must be greater than 0",
+        message: "Registration priceSnapshot must be greater than 0",
       });
     }
-
-    // Never use an amount sent by the frontend.
-    const amount = course.price;
 
     const payment = await Payment.create({
       classRegistrationId: classRegistration._id,
@@ -181,7 +191,7 @@ const updatePayment = async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Payment amount cannot be changed. It is determined by Course.price.",
+          "Payment amount cannot be changed. It is determined by ClassRegistration.priceSnapshot.",
       });
     }
 
@@ -225,7 +235,26 @@ const updatePayment = async (req, res) => {
         message: "Class registration not found",
       });
     }
+// MEMBER can only update their own payment.
+if (req.user.role === "MEMBER") {
+  const member = await Member.findOne({
+    userId: req.user.userId,
+  });
 
+  if (!member) {
+    return res.status(404).json({
+      success: false,
+      message: "Member profile not found",
+    });
+  }
+
+  if (classRegistration.memberId.toString() !== member._id.toString()) {
+    return res.status(403).json({
+      success: false,
+      message: "You cannot update another member's payment",
+    });
+  }
+}
     if (classRegistration.status === "CANCELLED") {
       return res.status(400).json({
         success: false,
@@ -353,7 +382,13 @@ const simulatePaymentResult = async (req, res) => {
         message: "You cannot access this payment",
       });
     }
-
+// Only ONLINE payments can be simulated.
+if (payment.paymentMethod !== "ONLINE") {
+  return res.status(400).json({
+    success: false,
+    message: "Only ONLINE payments can be simulated",
+  });
+}
     if (registration.status === "CANCELLED") {
       return res.status(400).json({
         success: false,
@@ -530,45 +565,79 @@ const vnpayReturn = async (req, res) => {
       });
     }
 
-    // Prevent a failed/duplicate callback from changing a successful payment.
-    if (payment.status === "SUCCESS") {
-      return res.status(200).json({
-        success: true,
-        message: "Payment was already confirmed",
-        data: { paymentId: payment._id, status: payment.status },
-      });
-    }
+    // VNPay returns vnp_Amount multiplied by 100.
+const expectedVnpayAmount = Number(payment.amount) * 100;
 
-    // VNPay sends vnp_Amount in units multiplied by 100.
-    if (Number(result.vnp_Amount) !== Number(payment.amount)) {
-      return res.status(400).json({
-        success: false,
-        message: "Payment amount does not match",
-      });
-    }
+if (Number(result.vnp_Amount) !== expectedVnpayAmount) {
+  return res.status(400).json({
+    success: false,
+    message: "Payment amount does not match",
+  });
+}
 
-    if (result.isSuccess) {
-      payment.status = "SUCCESS";
-      payment.paymentDate = new Date();
-      await payment.save();
+// Prevent duplicate callbacks from changing payment status.
+if (payment.status === "SUCCESS") {
+  return res.status(200).json({
+    success: true,
+    message: "Payment was already confirmed",
+    data: {
+      paymentId: payment._id,
+      status: payment.status,
+    },
+  });
+}
 
-      await ClassRegistration.findByIdAndUpdate(
-        payment.classRegistrationId,
-        { status: "CONFIRMED" }
-      );
-    } else {
-      payment.status = "FAILED";
-      await payment.save();
-    }
+// Do not allow a FAILED payment to become SUCCESS through a late callback.
+if (payment.status === "FAILED") {
+  return res.status(200).json({
+    success: false,
+    message: "Payment was already marked as FAILED",
+    data: {
+      paymentId: payment._id,
+      status: payment.status,
+    },
+  });
+}
 
-    return res.status(200).json({
-      success: result.isSuccess,
-      message: result.message,
-      data: {
-        paymentId: payment._id,
-        status: payment.status,
-      },
-    });
+// Find related registration.
+const registration = await ClassRegistration.findById(
+  payment.classRegistrationId
+);
+
+if (!registration) {
+  return res.status(404).json({
+    success: false,
+    message: "Class registration not found",
+  });
+}
+
+if (result.isSuccess) {
+  payment.status = "SUCCESS";
+  payment.paymentDate = new Date();
+  await payment.save();
+
+  // Only confirm registrations that are still awaiting payment.
+  if (registration.status === "PENDING_PAYMENT") {
+    registration.status = "CONFIRMED";
+    await registration.save();
+  }
+} else {
+  payment.status = "FAILED";
+  await payment.save();
+}
+
+return res.status(200).json({
+  success: result.isSuccess,
+  message:
+    result.isSuccess && registration.status === "CANCELLED"
+      ? "Payment succeeded, but registration is cancelled. Manual refund handling is required."
+      : result.message,
+  data: {
+    paymentId: payment._id,
+    status: payment.status,
+    registrationStatus: registration.status,
+  },
+});
   } catch (error) {
     console.error("VNPay return error:", error);
     return res.status(500).json({
@@ -578,11 +647,13 @@ const vnpayReturn = async (req, res) => {
   }
 };
 
+
 // VNPay server-to-server IPN callback
 const vnpayIpn = async (req, res) => {
   try {
     const result = vnpay.verifyIpnCall(req.query);
 
+    // Verify VNPay signature.
     if (!result.isVerified) {
       return res.status(200).json({
         RspCode: "97",
@@ -590,6 +661,7 @@ const vnpayIpn = async (req, res) => {
       });
     }
 
+    // Find payment using VNPay transaction reference.
     const payment = await Payment.findById(result.vnp_TxnRef);
 
     if (!payment) {
@@ -599,13 +671,26 @@ const vnpayIpn = async (req, res) => {
       });
     }
 
-    if (Number(result.vnp_Amount) !== Number(payment.amount)) {
+    // Only ONLINE payments can be processed by VNPay.
+    if (payment.paymentMethod !== "ONLINE") {
+      return res.status(200).json({
+        RspCode: "04",
+        Message: "Invalid payment method",
+      });
+    }
+
+    // Verify the amount returned by VNPay.
+    // VNPay sends the amount multiplied by 100.
+    const expectedVnpayAmount = Number(payment.amount) * 100;
+
+    if (Number(result.vnp_Amount) !== expectedVnpayAmount) {
       return res.status(200).json({
         RspCode: "04",
         Message: "Invalid amount",
       });
     }
 
+    // Prevent duplicate callbacks from changing a successful payment.
     if (payment.status === "SUCCESS") {
       return res.status(200).json({
         RspCode: "02",
@@ -613,15 +698,38 @@ const vnpayIpn = async (req, res) => {
       });
     }
 
+    // Do not allow a FAILED payment to become SUCCESS
+    // through a late callback.
+    if (payment.status === "FAILED") {
+      return res.status(200).json({
+        RspCode: "00",
+        Message: "Payment was already processed",
+      });
+    }
+
+    // Find the related class registration.
+    const registration = await ClassRegistration.findById(
+      payment.classRegistrationId
+    );
+
+    if (!registration) {
+      return res.status(200).json({
+        RspCode: "01",
+        Message: "Class registration not found",
+      });
+    }
+
     if (result.isSuccess) {
       payment.status = "SUCCESS";
       payment.paymentDate = new Date();
+
       await payment.save();
 
-      await ClassRegistration.findByIdAndUpdate(
-        payment.classRegistrationId,
-        { status: "CONFIRMED" }
-      );
+      // Only confirm registrations that are still awaiting payment.
+      if (registration.status === "PENDING_PAYMENT") {
+        registration.status = "CONFIRMED";
+        await registration.save();
+      }
     } else {
       payment.status = "FAILED";
       await payment.save();
@@ -629,10 +737,14 @@ const vnpayIpn = async (req, res) => {
 
     return res.status(200).json({
       RspCode: "00",
-      Message: "Confirm Success",
+      Message:
+        result.isSuccess && registration.status === "CANCELLED"
+          ? "Payment successful, but registration is cancelled. Manual refund handling is required."
+          : "Confirm Success",
     });
   } catch (error) {
     console.error("VNPay IPN error:", error);
+
     return res.status(200).json({
       RspCode: "99",
       Message: "Unknown error",
@@ -755,7 +867,7 @@ const getPaymentReceipt = async (req, res) => {
           select: "name courseId",
           populate: {
             path: "courseId",
-            select: "name price",
+            select: "name",
           },
         },
       ],

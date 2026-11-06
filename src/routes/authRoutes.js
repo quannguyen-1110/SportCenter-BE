@@ -21,7 +21,8 @@ const router = express.Router();
  *     summary: Register a new user
  *     description: |
  *       Access: PUBLIC
- *
+ *       Creates a new MEMBER account.
+ *       The role is assigned by the server and cannot be selected by the client.
  *       No authentication required.
  *       Creates a new user account.
  *     tags: [Authentication]
@@ -33,8 +34,7 @@ const router = express.Router();
  *             type: object
  *             required:
  *               - email
- *               - password
- *               - role
+ *               - password             
  *             properties:
  *               email:
  *                 type: string

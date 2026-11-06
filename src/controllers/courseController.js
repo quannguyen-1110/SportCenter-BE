@@ -6,13 +6,32 @@ const Subject = require("../models/Subject");
 const Class = require("../models/Class");
 const LearningPath = require("../models/LearningPath");
 
+
+const isValidPricing = (pricing) => {
+  if (
+    !pricing ||
+    typeof pricing !== "object" ||
+    Array.isArray(pricing)
+  ) {
+    return false;
+  }
+
+  return ["personal", "group"].every(
+    (type) =>
+      typeof pricing[type] === "number" &&
+      Number.isFinite(pricing[type]) &&
+      pricing[type] >= 0
+  );
+};
+
+
 // ==========================================
 // CREATE COURSE
 // POST /api/courses
 // ==========================================
 const createCourse = async (req, res) => {
   try {
-    const { subjectId, name, description, price, status } = req.body;
+    const { subjectId, name, description, pricing, status } = req.body;
 
     // Validate subjectId
     if (!subjectId || !mongoose.isValidObjectId(subjectId)) {
@@ -55,19 +74,14 @@ const createCourse = async (req, res) => {
       });
     }
 
-    // Validate price
-    if (
-      price === undefined ||
-      typeof price !== "number" ||
-      !Number.isFinite(price) ||
-      price < 0
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "price is required and must be a non-negative number",
-      });
-    }
-
+    // Validate pricing
+if (!isValidPricing(pricing)) {
+  return res.status(400).json({
+    success: false,
+    message:
+      "pricing must include valid non-negative personal and group prices",
+  });
+}
     // Validate status
     const courseStatus = status || "ACTIVE";
 
@@ -83,7 +97,7 @@ const createCourse = async (req, res) => {
       name: name.trim(),
       description:
         typeof description === "string" ? description.trim() : "",
-      price,
+      pricing,
       status: courseStatus,
     });
 
@@ -95,7 +109,7 @@ const createCourse = async (req, res) => {
         subjectId: course.subjectId,
         name: course.name,
         description: course.description,
-        price: course.price,
+        pricing: course.pricing,
         status: course.status,
         createdAt: course.createdAt,
       },
@@ -132,7 +146,7 @@ const getCourses = async (req, res) => {
   try {
     const courses = await Course.find()
       .select(
-        "_id subjectId name description price status createdAt updatedAt"
+        "_id subjectId name description pricing status createdAt updatedAt"
       )
       .populate("subjectId", "name")
       .sort({ createdAt: -1 });
@@ -159,7 +173,7 @@ const getCourses = async (req, res) => {
 const updateCourse = async (req, res) => {
   try {
     const { id } = req.params;
-    const { subjectId, name, description, price, status } = req.body;
+    const { subjectId, name, description, pricing, status } = req.body;
 
     if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({
@@ -173,7 +187,7 @@ const updateCourse = async (req, res) => {
       subjectId === undefined &&
       name === undefined &&
       description === undefined &&
-      price === undefined &&
+      pricing === undefined &&
       status === undefined
     ) {
       return res.status(400).json({
@@ -264,21 +278,18 @@ const updateCourse = async (req, res) => {
       course.description = description.trim();
     }
 
-    // Update price
-    if (price !== undefined) {
-      if (
-        typeof price !== "number" ||
-        !Number.isFinite(price) ||
-        price < 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "price must be a non-negative number",
-        });
-      }
+    // Update pricing
+if (pricing !== undefined) {
+  if (!isValidPricing(pricing)) {
+    return res.status(400).json({
+      success: false,
+      message:
+        "pricing must include valid non-negative personal and group prices",
+    });
+  }
 
-      course.price = price;
-    }
+  course.pricing = pricing;
+}
 
     // Update status
     if (status !== undefined) {
@@ -303,7 +314,7 @@ const updateCourse = async (req, res) => {
         subjectId: course.subjectId,
         name: course.name,
         description: course.description,
-        price: course.price,
+        pricing: course.pricing,
         status: course.status,
         createdAt: course.createdAt,
         updatedAt: course.updatedAt,

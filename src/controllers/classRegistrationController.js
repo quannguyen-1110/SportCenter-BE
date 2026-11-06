@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 
 const ClassRegistration = require("../models/ClassRegistration");
 const Class = require("../models/Class");
+const Course = require("../models/Course");
 const Member = require("../models/Member");
 const Payment = require("../models/Payment");
 
@@ -12,20 +13,63 @@ const VALID_REGISTRATION_STATUSES = [
   "CANCELLED",
 ];
 
-const isValidId = (id) => mongoose.isValidObjectId(id);
-
 const ACTIVE_REGISTRATION_STATUSES = [
   "PENDING_PAYMENT",
   "CONFIRMED",
 ];
 
-// Check capacity for GROUP and PERSONAL classes
+const isValidId = (id) => mongoose.isValidObjectId(id);
+
+// Get the correct one-time course price based on classType.
+const getClassPrice = async (classData) => {
+  const course = await Course.findById(classData.courseId);
+
+  if (!course) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "Course not found",
+    };
+  }
+
+  if (!course.pricing) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Course pricing has not been configured",
+    };
+  }
+
+  const priceType =
+    classData.classType === "PERSONAL" ? "personal" : "group";
+
+  const price = course.pricing[priceType];
+
+  if (
+    typeof price !== "number" ||
+    !Number.isFinite(price) ||
+    price < 0
+  ) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: `Invalid ${priceType} course price`,
+    };
+  }
+
+  return {
+    success: true,
+    price,
+    priceType,
+  };
+};
+
+// PENDING_PAYMENT also reserves the single place in a PERSONAL class.
+// Old class records without classType are treated as GROUP.
 const checkClassCapacity = async (
   classData,
   excludeRegistrationId = null
 ) => {
-  // GROUP classes allow multiple registrations.
-  // Old classes without classType are treated as GROUP.
   if ((classData.classType || "GROUP") !== "PERSONAL") {
     return { available: true };
   }
@@ -35,12 +79,12 @@ const checkClassCapacity = async (
     status: { $in: ACTIVE_REGISTRATION_STATUSES },
   };
 
-  // Exclude the current registration when updating it.
   if (excludeRegistrationId) {
     filter._id = { $ne: excludeRegistrationId };
   }
 
-  const activeRegistration = await ClassRegistration.findOne(filter);
+  const activeRegistration =
+    await ClassRegistration.findOne(filter);
 
   if (activeRegistration) {
     return {
@@ -53,13 +97,12 @@ const checkClassCapacity = async (
   return { available: true };
 };
 
-
-
-// CREATE class registration
+// POST /api/class-registrations
 const registerClass = async (req, res) => {
   try {
     const { classId, memberId } = req.body;
 
+    // Validate classId
     if (!classId || !isValidId(classId)) {
       return res.status(400).json({
         success: false,
@@ -67,6 +110,7 @@ const registerClass = async (req, res) => {
       });
     }
 
+    // Find class
     const classData = await Class.findById(classId);
 
     if (!classData) {
@@ -76,9 +120,9 @@ const registerClass = async (req, res) => {
       });
     }
 
+    // Find target member
     let targetMember;
 
-    // A MEMBER can register only their own account.
     if (req.user.role === "MEMBER") {
       targetMember = await Member.findOne({
         userId: req.user.userId,
@@ -93,8 +137,10 @@ const registerClass = async (req, res) => {
 
       if (
         memberId &&
-        (!isValidId(memberId) ||
-          memberId.toString() !== targetMember._id.toString())
+        (
+          !isValidId(memberId) ||
+          memberId.toString() !== targetMember._id.toString()
+        )
       ) {
         return res.status(403).json({
           success: false,
@@ -119,91 +165,96 @@ const registerClass = async (req, res) => {
       }
     }
 
-    const existingRegistration = await ClassRegistration.findOne({
-  classId,
-  memberId: targetMember._id,
-});
+    // Get price from Course based on classType.
+    // Never accept price from frontend.
+    const priceResult = await getClassPrice(classData);
 
-// Reject duplicate registrations unless the previous one was cancelled.
-if (
-  existingRegistration &&
-  existingRegistration.status !== "CANCELLED"
-) {
-  return res.status(409).json({
-    success: false,
-    message: "Member is already registered for this class",
-  });
-}
+    if (!priceResult.success) {
+      return res.status(priceResult.statusCode).json({
+        success: false,
+        message: priceResult.message,
+      });
+    }
 
-// Check capacity for PERSONAL classes.
-const capacity = await checkClassCapacity(classData);
+    // Check existing registration
+    const existingRegistration =
+      await ClassRegistration.findOne({
+        classId,
+        memberId: targetMember._id,
+      });
 
-if (!capacity.available) {
-  return res.status(409).json({
-    success: false,
-    message: capacity.message,
-  });
-}
+    if (
+      existingRegistration &&
+      existingRegistration.status !== "CANCELLED"
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: "Member is already registered for this class",
+      });
+    }
 
-// Reuse a cancelled registration when no payment is linked to it.
-// This avoids violating the unique classId + memberId index.
-if (existingRegistration) {
-  const previousPayment = await Payment.exists({
-    classRegistrationId: existingRegistration._id,
-  });
+    // Check PERSONAL class capacity
+    const capacity = await checkClassCapacity(classData);
 
-  if (previousPayment) {
-    return res.status(409).json({
-      success: false,
-      message:
-        "This cancelled registration has payment history. Please contact staff to register again.",
+    if (!capacity.available) {
+      return res.status(409).json({
+        success: false,
+        message: capacity.message,
+      });
+    }
+
+    // Reactivate a cancelled registration if it has no payment history.
+    if (existingRegistration) {
+      const previousPayment = await Payment.exists({
+        classRegistrationId: existingRegistration._id,
+      });
+
+      if (previousPayment) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "This cancelled registration has payment history. Please contact staff to register again.",
+        });
+      }
+
+      existingRegistration.status = "PENDING_PAYMENT";
+      existingRegistration.priceSnapshot = priceResult.price;
+      existingRegistration.registeredAt = new Date();
+
+      await existingRegistration.save();
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Cancelled registration reactivated. Payment is required to confirm the registration.",
+        data: existingRegistration,
+      });
+    }
+
+    // Create new registration with price snapshot
+    const registration = await ClassRegistration.create({
+      classId,
+      memberId: targetMember._id,
+      status: "PENDING_PAYMENT",
+      priceSnapshot: priceResult.price,
+      registeredAt: new Date(),
     });
-  }
 
-  existingRegistration.status = "PENDING_PAYMENT";
-  existingRegistration.registeredAt = new Date();
-
-  await existingRegistration.save();
-
-  return res.status(200).json({
-    success: true,
-    message:
-      "Cancelled registration reactivated. Payment is required to confirm the registration.",
-    data: {
-      id: existingRegistration._id,
-      classId: existingRegistration.classId,
-      memberId: existingRegistration.memberId,
-      status: existingRegistration.status,
-      registeredAt: existingRegistration.registeredAt,
-      createdAt: existingRegistration.createdAt,
-      updatedAt: existingRegistration.updatedAt,
-    },
-  });
-}
-
-// Create a new registration.
-const registration = await ClassRegistration.create({
-  classId,
-  memberId: targetMember._id,
-  status: "PENDING_PAYMENT",
-  registeredAt: new Date(),
-});
-
-return res.status(201).json({
-  success: true,
-  message:
-    "Class registration created. Payment is required to confirm the registration.",
-  data: {
-    id: registration._id,
-    classId: registration.classId,
-    memberId: registration.memberId,
-    status: registration.status,
-    registeredAt: registration.registeredAt,
-    createdAt: registration.createdAt,
-  },
-});
+    return res.status(201).json({
+      success: true,
+      message:
+        "Class registration created. Payment is required to confirm the registration.",
+      data: registration,
+    });
   } catch (error) {
     console.error("Register class error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Member is already registered for this class",
+      });
+    }
 
     return res.status(500).json({
       success: false,
@@ -212,33 +263,19 @@ return res.status(201).json({
   }
 };
 
-
-// GET class registrations
-// MEMBER: only their own registrations
-// RECEPTIONIST and CENTER_MANAGER: all registrations
+// GET /api/class-registrations
 const getClassRegistrations = async (req, res) => {
   try {
-    let filter = {};
-
-    if (req.user.role === "MEMBER") {
-      const userId = req.user.userId || req.user._id;
-
-      const member = await Member.findOne({ userId });
-
-      if (!member) {
-        return res.status(404).json({
-          success: false,
-          message: "Member profile not found",
-        });
-      }
-
-      // Only retrieve registrations belonging to this member
-      filter.memberId = member._id;
-    }
-
-    const registrations = await ClassRegistration.find(filter)
+    const registrations = await ClassRegistration.find()
       .populate("memberId", "fullName phone goal level")
-      .populate("classId", "name subjectId courseId coachId")
+      .populate({
+        path: "classId",
+        select: "name subjectId courseId coachId classType",
+        populate: {
+          path: "courseId",
+          select: "name pricing",
+        },
+      })
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -256,12 +293,13 @@ const getClassRegistrations = async (req, res) => {
   }
 };
 
-// UPDATE class registration
+// PUT /api/class-registrations/:id
 const updateClassRegistration = async (req, res) => {
   try {
     const { id } = req.params;
     const { classId, memberId, status } = req.body;
 
+    // Validate registration ID
     if (!isValidId(id)) {
       return res.status(400).json({
         success: false,
@@ -269,6 +307,7 @@ const updateClassRegistration = async (req, res) => {
       });
     }
 
+    // Validate status
     if (
       status !== undefined &&
       !VALID_REGISTRATION_STATUSES.includes(status)
@@ -288,10 +327,8 @@ const updateClassRegistration = async (req, res) => {
       });
     }
 
-    const isMember = req.user.role === "MEMBER";
-
-    // Members may only update their own registration and may cancel it.
-    if (isMember) {
+    // MEMBER can only cancel their own registration.
+    if (req.user.role === "MEMBER") {
       const ownMember = await Member.findOne({
         userId: req.user.userId,
       });
@@ -304,11 +341,13 @@ const updateClassRegistration = async (req, res) => {
       }
 
       if (
-        registration.memberId.toString() !== ownMember._id.toString()
+        registration.memberId.toString() !==
+        ownMember._id.toString()
       ) {
         return res.status(403).json({
           success: false,
-          message: "You cannot update another member's registration",
+          message:
+            "You cannot update another member's registration",
         });
       }
 
@@ -329,12 +368,20 @@ const updateClassRegistration = async (req, res) => {
       }
 
       if (
-        (classId &&
-          (!isValidId(classId) ||
-            classId.toString() !== registration.classId.toString())) ||
-        (memberId &&
-          (!isValidId(memberId) ||
-            memberId.toString() !== registration.memberId.toString()))
+        (
+          classId &&
+          (
+            !isValidId(classId) ||
+            classId.toString() !== registration.classId.toString()
+          )
+        ) ||
+        (
+          memberId &&
+          (
+            !isValidId(memberId) ||
+            memberId.toString() !== registration.memberId.toString()
+          )
+        )
       ) {
         return res.status(403).json({
           success: false,
@@ -344,11 +391,14 @@ const updateClassRegistration = async (req, res) => {
       }
     }
 
-    // Resolve the values that will be saved.
+    // Determine new class and member
     const newClassId = classId || registration.classId;
     const newMemberId = memberId || registration.memberId;
 
-    if (!isValidId(newClassId) || !isValidId(newMemberId)) {
+    if (
+      !isValidId(newClassId) ||
+      !isValidId(newMemberId)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid classId or memberId",
@@ -379,7 +429,7 @@ const updateClassRegistration = async (req, res) => {
     const memberChanged =
       newMemberId.toString() !== registration.memberId.toString();
 
-    // Keep a payment tied to the original registration details.
+    // Do not change class/member after payment has been created.
     if (classChanged || memberChanged) {
       const existingPayment = await Payment.exists({
         classRegistrationId: registration._id,
@@ -394,11 +444,13 @@ const updateClassRegistration = async (req, res) => {
       }
     }
 
-    const duplicateRegistration = await ClassRegistration.findOne({
-      classId: newClassId,
-      memberId: newMemberId,
-      _id: { $ne: registration._id },
-    });
+    // Check duplicate registration
+    const duplicateRegistration =
+      await ClassRegistration.findOne({
+        classId: newClassId,
+        memberId: newMemberId,
+        _id: { $ne: registration._id },
+      });
 
     if (duplicateRegistration) {
       return res.status(409).json({
@@ -410,41 +462,22 @@ const updateClassRegistration = async (req, res) => {
     const newStatus =
       status !== undefined ? status : registration.status;
 
-    // Do not cancel a paid registration before refund handling exists.
-if (newStatus === "CANCELLED") {
-  const successfulPayment = await Payment.exists({
-    classRegistrationId: registration._id,
-    status: "SUCCESS",
-  });
+    // Check PERSONAL class capacity
+    if (ACTIVE_REGISTRATION_STATUSES.includes(newStatus)) {
+      const capacity = await checkClassCapacity(
+        classData,
+        registration._id
+      );
 
-  if (successfulPayment) {
-    return res.status(409).json({
-      success: false,
-      message:
-        "Cannot cancel a paid registration until the refund process is handled",
-    });
-  }
-}
-    
-    // Check capacity before activating a registration.
-if (
-  ["PENDING_PAYMENT", "CONFIRMED"].includes(newStatus)
-) {
-  const capacity = await checkClassCapacity(
-    classData,
-    registration._id
-  );
+      if (!capacity.available) {
+        return res.status(409).json({
+          success: false,
+          message: capacity.message,
+        });
+      }
+    }
 
-  if (!capacity.available) {
-    return res.status(409).json({
-      success: false,
-      message: capacity.message,
-    });
-  }
-}
-    
-    // A staff member cannot confirm a registration without a successful payment.
-    // Members are already blocked from setting CONFIRMED above.
+    // Staff cannot confirm without a successful payment.
     if (newStatus === "CONFIRMED") {
       const successfulPayment = await Payment.exists({
         classRegistrationId: registration._id,
@@ -460,6 +493,21 @@ if (
       }
     }
 
+    // If the class changes, recalculate the snapshot price.
+    // This is allowed only when no payment exists.
+    if (classChanged || registration.priceSnapshot === undefined) {
+      const priceResult = await getClassPrice(classData);
+
+      if (!priceResult.success) {
+        return res.status(priceResult.statusCode).json({
+          success: false,
+          message: priceResult.message,
+        });
+      }
+
+      registration.priceSnapshot = priceResult.price;
+    }
+
     registration.classId = newClassId;
     registration.memberId = newMemberId;
     registration.status = newStatus;
@@ -473,6 +521,13 @@ if (
     });
   } catch (error) {
     console.error("Update class registration error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Member is already registered for this class",
+      });
+    }
 
     return res.status(500).json({
       success: false,

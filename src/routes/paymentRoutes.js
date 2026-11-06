@@ -1,3 +1,4 @@
+
 const express = require("express");
 
 const {
@@ -23,6 +24,7 @@ const router = express.Router();
  * /api/payments:
  *   get:
  *     summary: Get all payments
+ *     description: Only RECEPTIONIST and CENTER_MANAGER can retrieve all payments.
  *     tags: [Payments]
  *     security:
  *       - bearerAuth: []
@@ -31,8 +33,18 @@ const router = express.Router();
  *         description: Payments retrieved successfully
  *       401:
  *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Internal server error
  */
-router.get("/", authMiddleware, getPayments);
+router.get(
+  "/",
+  authMiddleware,
+  roleMiddleware("RECEPTIONIST", "CENTER_MANAGER"),
+  getPayments
+);
+
 /**
  * @swagger
  * /api/payments/{id}/status:
@@ -69,18 +81,19 @@ router.get("/", authMiddleware, getPayments);
 router.get(
   "/:id/status",
   authMiddleware,
-  roleMiddleware(
-    "MEMBER",
-    "RECEPTIONIST",
-    "CENTER_MANAGER"
-  ),
+  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
   getPaymentStatusById
 );
+
 /**
  * @swagger
  * /api/payments:
  *   post:
  *     summary: Create a payment for a class registration
+ *     description: |
+ *       The payment amount is calculated by the backend
+ *       using ClassRegistration.priceSnapshot.
+ *       MEMBER can only create payment for their own registration.
  *     tags: [Payments]
  *     security:
  *       - bearerAuth: []
@@ -105,13 +118,17 @@ router.get(
  *       201:
  *         description: Payment created successfully
  *       400:
- *         description: Invalid input
+ *         description: Invalid input or registration cannot be paid
  *       401:
  *         description: Authentication required
  *       403:
  *         description: Access denied
  *       404:
- *         description: Registration, class or course not found
+ *         description: Class registration not found
+ *       409:
+ *         description: A pending or successful payment already exists
+ *       500:
+ *         description: Internal server error
  */
 router.post(
   "/",
@@ -125,6 +142,10 @@ router.post(
  * /api/payments/{id}:
  *   put:
  *     summary: Update a pending payment
+ *     description: |
+ *       Only the payment method can be updated.
+ *       Amount, payment status, payment date and registration
+ *       association cannot be changed through this endpoint.
  *     tags: [Payments]
  *     security:
  *       - bearerAuth: []
@@ -142,9 +163,6 @@ router.post(
  *           schema:
  *             type: object
  *             properties:
- *               amount:
- *                 type: number
- *                 example: 500000
  *               paymentMethod:
  *                 type: string
  *                 enum: [CASH, BANK_TRANSFER, ONLINE]
@@ -160,6 +178,8 @@ router.post(
  *         description: Access denied
  *       404:
  *         description: Payment or registration not found
+ *       500:
+ *         description: Internal server error
  */
 router.put(
   "/:id",
@@ -173,6 +193,7 @@ router.put(
  * /api/payments/{id}/simulate:
  *   post:
  *     summary: Simulate a mock payment result (demo only)
+ *     description: Only available when PAYMENT_MODE=mock.
  *     tags: [Payments]
  *     security:
  *       - bearerAuth: []
@@ -204,9 +225,11 @@ router.put(
  *       401:
  *         description: Authentication required
  *       403:
- *         description: Mock mode is disabled
+ *         description: Mock mode is disabled or access denied
  *       404:
  *         description: Payment not found
+ *       500:
+ *         description: Internal server error
  */
 router.post(
   "/:id/simulate",
@@ -241,6 +264,8 @@ router.post(
  *         description: Access denied or VNPay disabled
  *       404:
  *         description: Payment or registration not found
+ *       500:
+ *         description: Internal server error
  */
 router.post(
   "/:id/vnpay",
@@ -250,13 +275,45 @@ router.post(
 );
 
 // VNPay redirects the customer's browser here after payment.
+// No authentication required.
 router.get("/vnpay-return", vnpayReturn);
 
 // VNPay calls this endpoint server-to-server.
-// Do not add authMiddleware to this route.
+// No authentication required.
 router.get("/vnpay-ipn", vnpayIpn);
 
-// Receptionist confirms cash or bank-transfer payment.
+/**
+ * @swagger
+ * /api/payments/{id}/record-payment:
+ *   post:
+ *     summary: Record offline payment at the front desk
+ *     description: Only RECEPTIONIST and CENTER_MANAGER can record offline payments.
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Payment ID
+ *     responses:
+ *       200:
+ *         description: Payment recorded successfully
+ *       400:
+ *         description: Invalid payment or cancelled registration
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Payment or registration not found
+ *       409:
+ *         description: Payment cannot be recorded
+ *       500:
+ *         description: Internal server error
+ */
 router.post(
   "/:id/record-payment",
   authMiddleware,
@@ -264,7 +321,38 @@ router.post(
   recordOfflinePayment
 );
 
-// Open a printable receipt for a successful payment.
+/**
+ * @swagger
+ * /api/payments/{id}/receipt:
+ *   get:
+ *     summary: Get printable payment receipt
+ *     description: |
+ *       Only successful payments can produce a receipt.
+ *       MEMBER can only access their own receipt.
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Payment ID
+ *     responses:
+ *       200:
+ *         description: Printable payment receipt returned as HTML
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Payment or related registration data not found
+ *       409:
+ *         description: Receipt is only available for successful payments
+ *       500:
+ *         description: Internal server error
+ */
 router.get(
   "/:id/receipt",
   authMiddleware,
