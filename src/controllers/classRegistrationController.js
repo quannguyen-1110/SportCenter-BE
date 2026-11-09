@@ -462,6 +462,14 @@ const updateClassRegistration = async (req, res) => {
     const newStatus =
       status !== undefined ? status : registration.status;
 
+    if (newStatus === "CANCELLED" && registration.status !== "CANCELLED" &&
+        await Payment.exists({ classRegistrationId: registration._id, status: "PENDING", payosOrderCode: { $exists: true } })) {
+      return res.status(409).json({
+        success: false,
+        message: "Hãy hủy yêu cầu trên trang payOS hoặc đợi link hết hạn, rồi kiểm tra trạng thái thanh toán trước khi hủy đăng ký.",
+      });
+    }
+
     // Check PERSONAL class capacity
     if (ACTIVE_REGISTRATION_STATUSES.includes(newStatus)) {
       const capacity = await checkClassCapacity(

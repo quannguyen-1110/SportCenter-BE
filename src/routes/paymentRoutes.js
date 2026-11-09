@@ -13,18 +13,27 @@ const {
   getPaymentReceipt,
   getPaymentStatusById,
 } = require("../controllers/paymentController");
+const { createPayosCheckout, payosWebhook } = require("../controllers/payosController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
 
+router.post("/payos/webhook", payosWebhook);
+router.get("/payos/return", (_req, res) => {
+  res.type("text").send("Quay lại ActiveHub và bấm Kiểm tra trạng thái mới nhất.");
+});
+router.post("/:id/checkout", authMiddleware, roleMiddleware("MEMBER"), (req, res) =>
+  process.env.PAYMENT_MODE === "payos" ? createPayosCheckout(req, res) : createVnpayPaymentUrl(req, res)
+);
+
 /**
  * @swagger
  * /api/payments:
  *   get:
- *     summary: Get all payments
- *     description: Only RECEPTIONIST and CENTER_MANAGER can retrieve all payments.
+ *     summary: List payments
+ *     description: Members see their own payments. Receptionists and center managers see all payments.
  *     tags: [Payments]
  *     security:
  *       - bearerAuth: []
@@ -41,7 +50,7 @@ const router = express.Router();
 router.get(
   "/",
   authMiddleware,
-  roleMiddleware("RECEPTIONIST", "CENTER_MANAGER"),
+  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
   getPayments
 );
 

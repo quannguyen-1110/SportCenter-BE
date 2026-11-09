@@ -30,11 +30,18 @@ const paymentSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    payosOrderCode: { type: Number, unique: true, sparse: true },
+    payosCheckoutUrl: String,
   },
   {
     timestamps: true,
     collection: "payments",
   }
+);
+
+paymentSchema.index(
+  { classRegistrationId: 1 },
+  { unique: true, partialFilterExpression: { status: "PENDING", payosOrderCode: { $exists: true } } }
 );
 
 module.exports = mongoose.model("Payment", paymentSchema);

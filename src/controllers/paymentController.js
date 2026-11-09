@@ -3,6 +3,7 @@ const ClassRegistration = require("../models/ClassRegistration");
 const Member = require("../models/Member");
 const { VNPay, ProductCode, VnpLocale } = require("vnpay");
 const mongoose = require("mongoose");
+const { payosClient, reconcilePayosPayment } = require("../services/payosService");
 
 const vnpay = new VNPay({
   tmnCode: process.env.VNPAY_TMN_CODE,
@@ -139,10 +140,19 @@ if (existingPayment) {
 };
 
 
-// GET all payments
+// GET payments visible to the signed-in user
 const getPayments = async (req, res) => {
   try {
-    const payments = await Payment.find()
+    const filter = {};
+    if (req.user.role === "MEMBER") {
+      const member = await Member.findOne({ userId: req.user.userId }).select("_id");
+      const registrationIds = member
+        ? await ClassRegistration.distinct("_id", { memberId: member._id })
+        : [];
+      filter.classRegistrationId = { $in: registrationIds };
+    }
+
+    const payments = await Payment.find(filter)
       .populate({
         path: "classRegistrationId",
         populate: [
@@ -286,11 +296,21 @@ if (req.user.role === "MEMBER") {
       });
     }
 
-    if (paymentMethod !== undefined) {
-      payment.paymentMethod = paymentMethod;
+    if (paymentMethod !== undefined && paymentMethod !== payment.paymentMethod) {
+      const updated = await Payment.findOneAndUpdate(
+        { _id: payment._id, status: "PENDING", payosOrderCode: { $exists: false } },
+        { $set: { paymentMethod } },
+        { returnDocument: "after" }
+      );
+      if (!updated) {
+        return res.status(409).json({
+          success: false,
+          message: "Không thể đổi phương thức khi đã tạo yêu cầu payOS hoặc giao dịch đã được xử lý.",
+        });
+      }
+      payment.paymentMethod = updated.paymentMethod;
+      payment.updatedAt = updated.updatedAt;
     }
-
-    await payment.save();
 
     return res.status(200).json({
       success: true,
@@ -427,10 +447,10 @@ if (payment.paymentMethod !== "ONLINE") {
 
 const createVnpayPaymentUrl = async (req, res) => {
   try {
-    if (process.env.PAYMENT_MODE === "mock") {
+    if (["mock", "payos"].includes(process.env.PAYMENT_MODE)) {
       return res.status(403).json({
         success: false,
-        message: "VNPay is disabled while PAYMENT_MODE=mock",
+        message: "VNPay is disabled in the current payment mode",
       });
     }
 
@@ -556,7 +576,7 @@ const vnpayReturn = async (req, res) => {
       });
     }
 
-    const payment = await Payment.findById(result.vnp_TxnRef);
+    const payment = await Payment.findOne({ _id: result.vnp_TxnRef, payosOrderCode: { $exists: false } });
 
     if (!payment) {
       return res.status(404).json({
@@ -662,7 +682,7 @@ const vnpayIpn = async (req, res) => {
     }
 
     // Find payment using VNPay transaction reference.
-    const payment = await Payment.findById(result.vnp_TxnRef);
+    const payment = await Payment.findOne({ _id: result.vnp_TxnRef, payosOrderCode: { $exists: false } });
 
     if (!payment) {
       return res.status(200).json({
@@ -1019,8 +1039,8 @@ const getPaymentStatusById = async (req, res) => {
     }
 
     // Find payment
-    const payment = await Payment.findById(id).select(
-      "_id classRegistrationId status paymentDate"
+    let payment = await Payment.findById(id).select(
+      "_id classRegistrationId status paymentDate amount payosOrderCode"
     );
 
     if (!payment) {
@@ -1031,7 +1051,7 @@ const getPaymentStatusById = async (req, res) => {
     }
 
     // Find related class registration
-    const registration = await ClassRegistration.findById(
+    let registration = await ClassRegistration.findById(
       payment.classRegistrationId
     ).select("memberId status");
 
@@ -1063,6 +1083,21 @@ const getPaymentStatusById = async (req, res) => {
           message: "You cannot access this payment",
         });
       }
+    }
+
+    if (payment.status === "PENDING" && payment.payosOrderCode) {
+      const client = payosClient();
+      if (!client) return res.status(503).json({ success: false, message: "BE chưa có đủ khóa cấu hình payOS." });
+      try {
+        await reconcilePayosPayment(client, payment);
+      } catch (error) {
+        console.error("payOS status check failed:", error.name);
+        return res.status(502).json({ success: false, message: "Chưa kiểm tra được giao dịch payOS. Vui lòng thử lại." });
+      }
+      [payment, registration] = await Promise.all([
+        Payment.findById(id).select("status paymentDate"),
+        ClassRegistration.findById(registration._id).select("status"),
+      ]);
     }
 
     return res.status(200).json({

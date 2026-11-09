@@ -17,7 +17,14 @@ const Homework = require("../models/Homework");
 // ==========================================
 const createClass = async (req, res) => {
   try {
-    const { name, courseId, coachId, subjectId } = req.body;
+    const { name, courseId, coachId, subjectId, classType = "GROUP" } = req.body;
+
+    if (classType !== "GROUP" && classType !== "PERSONAL") {
+      return res.status(400).json({
+        success: false,
+        message: "classType must be GROUP or PERSONAL",
+      });
+    }
 
     // Validate required fields
     if (typeof name !== "string" || !name.trim()) {
@@ -116,6 +123,7 @@ const createClass = async (req, res) => {
       subjectId: course.subjectId,
       courseId: course._id,
       coachId: coach._id,
+      classType,
     });
 
     return res.status(201).json({
@@ -127,6 +135,7 @@ const createClass = async (req, res) => {
         subjectId: newClass.subjectId,
         courseId: newClass.courseId,
         coachId: newClass.coachId,
+        classType: newClass.classType,
       },
     });
   } catch (error) {
