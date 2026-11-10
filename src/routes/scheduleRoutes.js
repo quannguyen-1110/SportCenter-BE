@@ -15,8 +15,64 @@ const {
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
+const { generateClassSchedules } = require("../controllers/classScheduleController");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/schedules/generate:
+ *   post:
+ *     summary: Save a class curriculum and its generated schedules atomically
+ *     description: CENTER_MANAGER only. Reuses existing class lessons; rejects stale previews and overlapping schedules. Any write failure rolls back the whole batch.
+ *     tags: [Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [classId, learningPathId, courseId, coachId, newCurriculum, expectedLessons, rows]
+ *             properties:
+ *               classId: { type: string }
+ *               learningPathId: { type: string }
+ *               courseId: { type: string }
+ *               coachId: { type: string }
+ *               newCurriculum: { type: boolean }
+ *               expectedLessons:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [id, title, description, order]
+ *                   properties:
+ *                     id: { type: string }
+ *                     title: { type: string }
+ *                     description: { type: string }
+ *                     order: { type: integer }
+ *               rows:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 1000
+ *                 items:
+ *                   type: object
+ *                   required: [lessonOrder, roomId, date, startTime, endTime]
+ *                   properties:
+ *                     lessonOrder: { type: integer }
+ *                     roomId: { type: string }
+ *                     date: { type: string, format: date }
+ *                     startTime: { type: string, example: '18:00' }
+ *                     endTime: { type: string, example: '19:00' }
+ *     responses:
+ *       201:
+ *         description: Curriculum and all schedules committed
+ *       400:
+ *         description: Invalid preview
+ *       409:
+ *         description: Stale curriculum or scheduling conflict; nothing committed
+ */
+router.post("/generate", authMiddleware, roleMiddleware("CENTER_MANAGER"), generateClassSchedules);
 
 const upload = multer({
   storage: multer.memoryStorage(),

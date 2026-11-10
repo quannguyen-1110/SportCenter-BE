@@ -10,6 +10,8 @@ const Schedule = require("../models/Schedule");
 const ClassRegistration = require("../models/ClassRegistration");
 const Attendance = require("../models/Attendance");
 const Homework = require("../models/Homework");
+const { coachCanTeach } = require("../models/coachSubjects");
+const { hasDeletionDependencies } = require("../services/deletionDependencies");
 
 // ==========================================
 // CREATE CLASS
@@ -17,14 +19,7 @@ const Homework = require("../models/Homework");
 // ==========================================
 const createClass = async (req, res) => {
   try {
-    const { name, courseId, coachId, subjectId, classType = "GROUP" } = req.body;
-
-    if (classType !== "GROUP" && classType !== "PERSONAL") {
-      return res.status(400).json({
-        success: false,
-        message: "classType must be GROUP or PERSONAL",
-      });
-    }
+    const { name, courseId, coachId, subjectId } = req.body;
 
     // Validate required fields
     if (typeof name !== "string" || !name.trim()) {
@@ -107,6 +102,9 @@ const createClass = async (req, res) => {
       });
     }
 
+    if (!coachCanTeach(coach, course.subjectId)) {
+      return res.status(400).json({ success: false, message: "Coach is not qualified to teach this subject" });
+    }
     // Existing business rule: one coach can only teach one class.
     const existingClass = await Class.findOne({ coachId });
 
@@ -123,7 +121,6 @@ const createClass = async (req, res) => {
       subjectId: course.subjectId,
       courseId: course._id,
       coachId: coach._id,
-      classType,
     });
 
     return res.status(201).json({
@@ -135,7 +132,6 @@ const createClass = async (req, res) => {
         subjectId: newClass.subjectId,
         courseId: newClass.courseId,
         coachId: newClass.coachId,
-        classType: newClass.classType,
       },
     });
   } catch (error) {
@@ -170,7 +166,7 @@ const getClasses = async (req, res) => {
   try {
     const classes = await Class.find()
       .populate("subjectId", "name")
-      .populate("courseId", "name description price status subjectId")
+      .populate("courseId", "name description price pricing status subjectId")
       .populate("coachId", "fullName phone")
       .sort({ createdAt: -1 });
 
@@ -286,6 +282,9 @@ const updateClass = async (req, res) => {
       });
     }
 
+    if (!coachCanTeach(coach, course.subjectId)) {
+      return res.status(400).json({ success: false, message: "Coach is not qualified to teach this subject" });
+    }
     // Ensure no other class is assigned to this coach.
     const classUsingCoach = await Class.findOne({
       coachId,
@@ -394,7 +393,8 @@ const deleteClass = async (req, res) => {
       Homework.findOne({ classId: existingClass._id }),
     ]);
 
-    if (lesson || schedule || registration || attendance || homework) {
+    if (lesson || schedule || registration || attendance || homework ||
+        await hasDeletionDependencies("class", existingClass)) {
       return res.status(409).json({
         success: false,
         message:

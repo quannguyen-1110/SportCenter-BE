@@ -7,23 +7,7 @@ const Class = require("../models/Class");
 const LearningPath = require("../models/LearningPath");
 
 
-const isValidPricing = (pricing) => {
-  if (
-    !pricing ||
-    typeof pricing !== "object" ||
-    Array.isArray(pricing)
-  ) {
-    return false;
-  }
-
-  return ["personal", "group"].every(
-    (type) =>
-      typeof pricing[type] === "number" &&
-      Number.isFinite(pricing[type]) &&
-      pricing[type] >= 0
-  );
-};
-
+const isValidPrice = price => typeof price === "number" && Number.isFinite(price) && price >= 0;
 
 // ==========================================
 // CREATE COURSE
@@ -31,7 +15,7 @@ const isValidPricing = (pricing) => {
 // ==========================================
 const createCourse = async (req, res) => {
   try {
-    const { subjectId, name, description, pricing, status } = req.body;
+    const { subjectId, name, description, price, status } = req.body;
 
     // Validate subjectId
     if (!subjectId || !mongoose.isValidObjectId(subjectId)) {
@@ -74,14 +58,9 @@ const createCourse = async (req, res) => {
       });
     }
 
-    // Validate pricing
-if (!isValidPricing(pricing)) {
-  return res.status(400).json({
-    success: false,
-    message:
-      "pricing must include valid non-negative personal and group prices",
-  });
-}
+    if (!isValidPrice(price)) {
+      return res.status(400).json({ success: false, message: "price must be a valid non-negative tuition per student" });
+    }
     // Validate status
     const courseStatus = status || "ACTIVE";
 
@@ -97,7 +76,7 @@ if (!isValidPricing(pricing)) {
       name: name.trim(),
       description:
         typeof description === "string" ? description.trim() : "",
-      pricing,
+      price,
       status: courseStatus,
     });
 
@@ -109,7 +88,7 @@ if (!isValidPricing(pricing)) {
         subjectId: course.subjectId,
         name: course.name,
         description: course.description,
-        pricing: course.pricing,
+        price: Course.tuitionOf(course),
         status: course.status,
         createdAt: course.createdAt,
       },
@@ -146,7 +125,7 @@ const getCourses = async (req, res) => {
   try {
     const courses = await Course.find()
       .select(
-        "_id subjectId name description pricing status createdAt updatedAt"
+        "_id subjectId name description price pricing status createdAt updatedAt"
       )
       .populate("subjectId", "name")
       .sort({ createdAt: -1 });
@@ -173,7 +152,7 @@ const getCourses = async (req, res) => {
 const updateCourse = async (req, res) => {
   try {
     const { id } = req.params;
-    const { subjectId, name, description, pricing, status } = req.body;
+    const { subjectId, name, description, price, status } = req.body;
 
     if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({
@@ -187,7 +166,7 @@ const updateCourse = async (req, res) => {
       subjectId === undefined &&
       name === undefined &&
       description === undefined &&
-      pricing === undefined &&
+      price === undefined &&
       status === undefined
     ) {
       return res.status(400).json({
@@ -278,18 +257,12 @@ const updateCourse = async (req, res) => {
       course.description = description.trim();
     }
 
-    // Update pricing
-if (pricing !== undefined) {
-  if (!isValidPricing(pricing)) {
-    return res.status(400).json({
-      success: false,
-      message:
-        "pricing must include valid non-negative personal and group prices",
-    });
-  }
-
-  course.pricing = pricing;
-}
+    if (price !== undefined) {
+      if (!isValidPrice(price)) {
+        return res.status(400).json({ success: false, message: "price must be a valid non-negative tuition per student" });
+      }
+      course.price = price;
+    }
 
     // Update status
     if (status !== undefined) {
@@ -314,7 +287,7 @@ if (pricing !== undefined) {
         subjectId: course.subjectId,
         name: course.name,
         description: course.description,
-        pricing: course.pricing,
+        price: Course.tuitionOf(course),
         status: course.status,
         createdAt: course.createdAt,
         updatedAt: course.updatedAt,

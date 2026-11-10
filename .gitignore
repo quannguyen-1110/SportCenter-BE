@@ -8,3 +8,33 @@ dist/
 build/
 .DS_Store
 npm-debug.log*
+
+# Local verification utilities and generated artifacts
+/test/
+/tests/
+/docs/
+/scripts/
+/.temp/
+/.payment-local-test/
+/.playwright-mcp/
+/test-results/
+/test-artifacts/
+/playwright-report/
+/.cache/
+/.vite/
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+*.trace
+
+# Machine-specific files and local credentials
+Thumbs.db
+*.swp
+*.swo
+/.credentials/
+/credentials*.json
+/tokens*.json
+*.pem
+*.key

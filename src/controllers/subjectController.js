@@ -1,5 +1,7 @@
 const Subject = require("../models/Subject");
+const { hasDeletionDependencies } = require("../services/deletionDependencies");
 const Class = require("../models/Class");
+const Coach = require("../models/Coach");
 
 // CREATE subject
 const createSubject = async (req, res) => {
@@ -150,6 +152,12 @@ const deleteSubject = async (req, res) => {
       });
     }
 
+    if (await Coach.exists({ subjectIds: id })) {
+      return res.status(409).json({ success: false, message: "Cannot delete subject because it is assigned to a coach" });
+    }
+    if (await hasDeletionDependencies("subject", subject)) {
+      return res.status(409).json({ success: false, message: "Cannot delete subject because it is being used by a course" });
+    }
     await Subject.findByIdAndDelete(id);
 
     return res.status(200).json({

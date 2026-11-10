@@ -13,7 +13,7 @@ async function createPayosCheckout(req, res) {
     const client = payosClient();
     if (!client) return fail(503, "BE chưa có đủ khóa cấu hình payOS.");
     const [payment, member] = await Promise.all([
-      Payment.findById(req.params.id),
+      Payment.findOne({ _id: req.params.id, ...Payment.providerFilter("PAYOS") }),
       Member.findOne({ userId: req.user.userId }),
     ]);
     if (!payment || !member) return fail(404, "Không tìm thấy yêu cầu thanh toán.");
@@ -28,7 +28,7 @@ async function createPayosCheckout(req, res) {
     }
 
     // Reserve a stable order code before calling payOS so retries reuse the same order.
-    const payable = { _id: payment._id, status: "PENDING", paymentMethod: "ONLINE" };
+    const payable = { _id: payment._id, status: "PENDING", ...Payment.providerFilter("PAYOS") };
     const reserved = await Payment.findOneAndUpdate(
       { ...payable, payosOrderCode: { $exists: false } },
       { $set: { payosOrderCode: randomInt(1, 2 ** 48 - 1) } },
@@ -59,7 +59,7 @@ async function createPayosCheckout(req, res) {
         }
         paymentUrl = `https://pay.payos.vn/web/${link.id}`;
       }
-      await Payment.updateOne({ _id: reserved._id, payosOrderCode: orderCode }, { $set: { payosCheckoutUrl: paymentUrl } });
+      await Payment.updateOne({ ...payable, payosOrderCode: orderCode }, { $set: { payosCheckoutUrl: paymentUrl } });
     }
     return res.json({ success: true, data: { paymentUrl } });
   } catch (error) {
@@ -83,7 +83,11 @@ async function payosWebhook(req, res) {
   }
   try {
     // An unknown order can be the signed sample sent when registering the webhook.
-    const payment = await Payment.findOne({ payosOrderCode: event.orderCode, status: "PENDING" });
+    const payment = await Payment.findOne({
+      payosOrderCode: event.orderCode,
+      status: "PENDING",
+      ...Payment.providerFilter("PAYOS"),
+    });
     if (payment) await reconcilePayosPayment(client, payment, event.paymentLinkId);
     return res.sendStatus(200);
   } catch (error) {
