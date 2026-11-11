@@ -566,6 +566,12 @@ const deleteAttendance = async (req, res) => {
       });
     }
 
+    if (req.user.role === "COACH") {
+      const coach = await Coach.findOne({ userId: req.user.userId });
+      if (!coach || !await Class.exists({ _id: attendance.classId, coachId: coach._id })) {
+        return res.status(403).json({ success: false, message: "You are not assigned to this class" });
+      }
+    }
     await Attendance.findByIdAndDelete(id);
 
     return res.status(200).json({

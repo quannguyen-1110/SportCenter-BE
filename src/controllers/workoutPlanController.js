@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const WorkoutPlan = require("../models/WorkoutPlan");
+const { hasDeletionDependencies } = require("../services/deletionDependencies");
 const Coach = require("../models/Coach");
 const Member = require("../models/Member");
 const Class = require("../models/Class");
@@ -445,6 +446,9 @@ const deleteWorkoutPlan = async (req, res) => {
       });
     }
 
+    if (await hasDeletionDependencies("workoutPlan", workoutPlan)) {
+      return res.status(409).json({ success: false, message: "Cannot delete workout plan because results exist" });
+    }
     await workoutPlan.deleteOne();
 
     return res.status(200).json({

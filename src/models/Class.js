@@ -17,13 +17,6 @@ const classSchema = new mongoose.Schema(
       ref: "Course",
       required: true,
     },
-    // GROUP accepts multiple registrations; PERSONAL accepts one active registration.
-    classType: {
-      type: String,
-      enum: ["GROUP", "PERSONAL"],
-      default: "GROUP",
-      required: true,
-    },
     // Preserved existing business rule: a coach can be assigned to one class only.
     coachId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -35,6 +28,12 @@ const classSchema = new mongoose.Schema(
   {
     timestamps: true,
     collection: "classes",
+    toJSON: {
+      transform(_document, value) {
+        delete value.classType;
+        return value;
+      },
+    },
   }
 );
 

@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 
 const Lesson = require("../models/Lesson");
+const { hasDeletionDependencies } = require("../services/deletionDependencies");
 const LearningPath = require("../models/LearningPath");
 const Schedule = require("../models/Schedule");
 const Attendance = require("../models/Attendance");
@@ -11,7 +12,7 @@ const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 // Validate Class and LearningPath belong to the same Course
 const validateLessonReferences = async (classId, learningPathId) => {
-  if (!isValidId(classId) || !isValidId(learningPathId)) {
+  if ((classId !== null && !isValidId(classId)) || !isValidId(learningPathId)) {
     return {
       valid: false,
       status: 400,
@@ -20,11 +21,11 @@ const validateLessonReferences = async (classId, learningPathId) => {
   }
 
   const [classData, learningPath] = await Promise.all([
-    Class.findById(classId),
+    classId === null ? null : Class.findById(classId),
     LearningPath.findById(learningPathId),
   ]);
 
-  if (!classData) {
+  if (classId !== null && !classData) {
     return {
       valid: false,
       status: 404,
@@ -40,11 +41,11 @@ const validateLessonReferences = async (classId, learningPathId) => {
     };
   }
 
-  if (
+  if (classId !== null && (
     !classData.courseId ||
     !learningPath.courseId ||
     classData.courseId.toString() !== learningPath.courseId.toString()
-  ) {
+  )) {
     return {
       valid: false,
       status: 400,
@@ -63,7 +64,7 @@ const validateLessonReferences = async (classId, learningPathId) => {
 const createLesson = async (req, res) => {
   try {
     const {
-      classId,
+      classId = null,
       learningPathId,
       title,
       description = "",
@@ -71,7 +72,6 @@ const createLesson = async (req, res) => {
     } = req.body;
 
     if (
-      !classId ||
       !learningPathId ||
       typeof title !== "string" ||
       !title.trim() ||
@@ -81,7 +81,7 @@ const createLesson = async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "classId, learningPathId, title and order are required",
+          "learningPathId, title and order are required; omit classId for a template lesson",
       });
     }
 
@@ -109,13 +109,14 @@ const createLesson = async (req, res) => {
     // Each Class has its own lesson order: 1, 2, 3, ...
     const existingLesson = await Lesson.findOne({
       classId,
+      ...(classId === null ? { learningPathId } : {}),
       order: lessonOrder,
     });
 
     if (existingLesson) {
       return res.status(409).json({
         success: false,
-        message: "A lesson with this order already exists in this class",
+        message: classId === null ? "A lesson with this order already exists in this learning path" : "A lesson with this order already exists in this class",
       });
     }
 
@@ -153,7 +154,17 @@ const createLesson = async (req, res) => {
 // GET all lessons
 const getLessons = async (req, res) => {
   try {
-    const lessons = await Lesson.find()
+    const filter = {};
+    if (req.query.templates !== undefined) {
+      if (req.user.role !== "CENTER_MANAGER") return res.status(403).json({ success: false, message: "Access denied" });
+      if (req.query.templates !== "true") return res.status(400).json({ success: false, message: "Invalid templates filter" });
+      filter.classId = null;
+    }
+    if (req.query.learningPathId !== undefined) {
+      if (!isValidId(req.query.learningPathId)) return res.status(400).json({ success: false, message: "Invalid learning path ID" });
+      filter.learningPathId = req.query.learningPathId;
+    }
+    const lessons = await Lesson.find(filter)
       .populate({
         path: "classId",
         select: "name subjectId courseId coachId",
@@ -310,10 +321,8 @@ const updateLesson = async (req, res) => {
       });
     }
 
-    // Validate references when the lesson has a class assigned.
-    // This also allows older lessons with classId = null
-    // to be edited without immediately migrating every record.
-    if (finalClassId) {
+    // Null classId identifies a reusable lesson in a course learning path.
+    {
       const references = await validateLessonReferences(
         finalClassId,
         finalLearningPathId
@@ -325,14 +334,6 @@ const updateLesson = async (req, res) => {
           message: references.message,
         });
       }
-    } else if (
-      !isValidId(finalLearningPathId) ||
-      !(await LearningPath.exists({ _id: finalLearningPathId }))
-    ) {
-      return res.status(404).json({
-        success: false,
-        message: "Learning path not found",
-      });
     }
 
     // Do not move a lesson to another class if schedules already use it.
@@ -354,9 +355,10 @@ const updateLesson = async (req, res) => {
     }
 
     // Prevent duplicate order within the same class.
-    if (finalClassId) {
+    {
       const existingLesson = await Lesson.findOne({
-        classId: finalClassId,
+        classId: finalClassId || null,
+        ...(!finalClassId ? { learningPathId: finalLearningPathId } : {}),
         order: finalOrder,
         _id: { $ne: lesson._id },
       });
@@ -365,7 +367,7 @@ const updateLesson = async (req, res) => {
         return res.status(409).json({
           success: false,
           message:
-            "A lesson with this order already exists in this class",
+            finalClassId === null ? "A lesson with this order already exists in this learning path" : "A lesson with this order already exists in this class",
         });
       }
     }
@@ -461,6 +463,9 @@ const deleteLesson = async (req, res) => {
       });
     }
 
+    if (await hasDeletionDependencies("lesson", lesson)) {
+      return res.status(409).json({ success: false, message: "Cannot delete lesson because progress records exist" });
+    }
     await Lesson.findByIdAndDelete(lesson._id);
 
     return res.status(200).json({

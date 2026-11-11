@@ -13,88 +13,17 @@ const VALID_REGISTRATION_STATUSES = [
   "CANCELLED",
 ];
 
-const ACTIVE_REGISTRATION_STATUSES = [
-  "PENDING_PAYMENT",
-  "CONFIRMED",
-];
-
 const isValidId = (id) => mongoose.isValidObjectId(id);
 
-// Get the correct one-time course price based on classType.
-const getClassPrice = async (classData) => {
+// Every student pays the course tuition independently of the other registrations.
+const getClassPrice = async classData => {
   const course = await Course.findById(classData.courseId);
-
-  if (!course) {
-    return {
-      success: false,
-      statusCode: 404,
-      message: "Course not found",
-    };
+  if (!course) return { success: false, statusCode: 404, message: "Course not found" };
+  const price = Course.tuitionOf(course);
+  if (price === undefined) {
+    return { success: false, statusCode: 400, message: "Course tuition has not been configured" };
   }
-
-  if (!course.pricing) {
-    return {
-      success: false,
-      statusCode: 400,
-      message: "Course pricing has not been configured",
-    };
-  }
-
-  const priceType =
-    classData.classType === "PERSONAL" ? "personal" : "group";
-
-  const price = course.pricing[priceType];
-
-  if (
-    typeof price !== "number" ||
-    !Number.isFinite(price) ||
-    price < 0
-  ) {
-    return {
-      success: false,
-      statusCode: 400,
-      message: `Invalid ${priceType} course price`,
-    };
-  }
-
-  return {
-    success: true,
-    price,
-    priceType,
-  };
-};
-
-// PENDING_PAYMENT also reserves the single place in a PERSONAL class.
-// Old class records without classType are treated as GROUP.
-const checkClassCapacity = async (
-  classData,
-  excludeRegistrationId = null
-) => {
-  if ((classData.classType || "GROUP") !== "PERSONAL") {
-    return { available: true };
-  }
-
-  const filter = {
-    classId: classData._id,
-    status: { $in: ACTIVE_REGISTRATION_STATUSES },
-  };
-
-  if (excludeRegistrationId) {
-    filter._id = { $ne: excludeRegistrationId };
-  }
-
-  const activeRegistration =
-    await ClassRegistration.findOne(filter);
-
-  if (activeRegistration) {
-    return {
-      available: false,
-      message:
-        "This personal class already has a pending or confirmed member",
-    };
-  }
-
-  return { available: true };
+  return { success: true, price };
 };
 
 // POST /api/class-registrations
@@ -165,7 +94,7 @@ const registerClass = async (req, res) => {
       }
     }
 
-    // Get price from Course based on classType.
+    // Get the per-student tuition from the course.
     // Never accept price from frontend.
     const priceResult = await getClassPrice(classData);
 
@@ -190,16 +119,6 @@ const registerClass = async (req, res) => {
       return res.status(409).json({
         success: false,
         message: "Member is already registered for this class",
-      });
-    }
-
-    // Check PERSONAL class capacity
-    const capacity = await checkClassCapacity(classData);
-
-    if (!capacity.available) {
-      return res.status(409).json({
-        success: false,
-        message: capacity.message,
       });
     }
 
@@ -266,14 +185,22 @@ const registerClass = async (req, res) => {
 // GET /api/class-registrations
 const getClassRegistrations = async (req, res) => {
   try {
-    const registrations = await ClassRegistration.find()
+    const filter = {};
+    if (req.user.role === "MEMBER") {
+      const member = await Member.findOne({ userId: req.user.userId }).select("_id");
+      if (!member) {
+        return res.status(404).json({ success: false, message: "Member profile not found" });
+      }
+      filter.memberId = member._id;
+    }
+    const registrations = await ClassRegistration.find(filter)
       .populate("memberId", "fullName phone goal level")
       .populate({
         path: "classId",
-        select: "name subjectId courseId coachId classType",
+        select: "name subjectId courseId coachId",
         populate: {
           path: "courseId",
-          select: "name pricing",
+          select: "name price pricing",
         },
       })
       .sort({ createdAt: -1 });
@@ -462,19 +389,12 @@ const updateClassRegistration = async (req, res) => {
     const newStatus =
       status !== undefined ? status : registration.status;
 
-    // Check PERSONAL class capacity
-    if (ACTIVE_REGISTRATION_STATUSES.includes(newStatus)) {
-      const capacity = await checkClassCapacity(
-        classData,
-        registration._id
-      );
-
-      if (!capacity.available) {
-        return res.status(409).json({
-          success: false,
-          message: capacity.message,
-        });
-      }
+    if (newStatus === "CANCELLED" && registration.status !== "CANCELLED" &&
+        await Payment.exists({ classRegistrationId: registration._id, status: "PENDING", payosOrderCode: { $exists: true } })) {
+      return res.status(409).json({
+        success: false,
+        message: "Hãy hủy yêu cầu trên trang payOS hoặc đợi link hết hạn, rồi kiểm tra trạng thái thanh toán trước khi hủy đăng ký.",
+      });
     }
 
     // Staff cannot confirm without a successful payment.
@@ -540,5 +460,4 @@ module.exports = {
   registerClass,
   getClassRegistrations,
   updateClassRegistration,
-  checkClassCapacity,
 };

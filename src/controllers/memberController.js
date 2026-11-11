@@ -1,4 +1,5 @@
 const Member = require("../models/Member");
+const { hasDeletionDependencies } = require("../services/deletionDependencies");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 
@@ -209,6 +210,9 @@ const deleteMember = async (req, res) => {
       });
     }
 
+    if (await hasDeletionDependencies("member", member)) {
+      return res.status(409).json({ success: false, message: "Cannot delete member because related records exist" });
+    }
     await Member.findByIdAndDelete(id);
 
     return res.status(200).json({

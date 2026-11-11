@@ -15,6 +15,62 @@ const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+const { createCoachAccount } = require("../controllers/coachAccountController");
+
+/**
+ * @swagger
+ * /api/coaches/accounts:
+ *   post:
+ *     summary: Manager provisions a coach login account, profile and specialty
+ *     description: Creates User and Coach atomically. Role is always COACH. Does not send an invitation email or return credentials.
+ *     tags: [Coaches]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password, fullName, phone, subjectIds]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 writeOnly: true
+ *                 minLength: 6
+ *                 description: Initial password, at most 72 UTF-8 bytes.
+ *               fullName:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               subjectIds:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 1
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       201:
+ *         description: Account and coach profile created; data contains user and coach.
+ *       400:
+ *         description: Invalid account or specialty data
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: CENTER_MANAGER role required
+ *       404:
+ *         description: Subject not found
+ *       409:
+ *         description: Email already exists
+ *       500:
+ *         description: Account creation failed
+ */
+router.post("/accounts", authMiddleware, roleMiddleware("CENTER_MANAGER"), createCoachAccount);
+
 
 /**
  * @swagger
@@ -53,8 +109,7 @@ router.get("/", authMiddleware, getCoaches);
  * @swagger
  * /api/coaches:
  *   post:
- *     summary: Create a coach profile
- *     description: Each coach is assigned to exactly one sport subject.
+ *     summary: Create a coach profile with exactly one subject specialty
  *     tags: [Coaches]
  *     security:
  *       - bearerAuth: []
@@ -68,21 +123,24 @@ router.get("/", authMiddleware, getCoaches);
  *               - userId
  *               - fullName
  *               - phone
- *               - subjectId
+ *               - subjectIds
  *             properties:
  *               userId:
  *                 type: string
  *                 example: 6ab6878512d539c14ac93547
+ *               subjectIds:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 1
+ *                 items:
+ *                   type: string
+ *                 description: Exactly one ID referencing an existing subject.
  *               fullName:
  *                 type: string
  *                 example: Nguyen Van A
  *               phone:
  *                 type: string
  *                 example: "0901234567"
- *               subjectId:
- *                 type: string
- *                 description: Sport subject ID assigned to this coach
- *                 example: 6ab6878512d539c14ac93548
  *     responses:
  *       201:
  *         description: Coach created successfully
@@ -93,7 +151,7 @@ router.get("/", authMiddleware, getCoaches);
  *       403:
  *         description: Access denied
  *       404:
- *         description: User or Subject not found
+ *         description: User or subject not found
  *       409:
  *         description: Coach profile already exists
  *       500:
@@ -213,8 +271,8 @@ router.get(
  * @swagger
  * /api/coaches/{id}:
  *   put:
- *     summary: Update a coach profile
- *     description: Update coach information and/or assigned sport subject.
+ *     summary: Update a coach profile or its single subject specialty
+ *     description: Provide at least one of fullName, phone or subjectIds. Legacy profiles without a specialty must provide subjectIds. The specialty must match any assigned class.
  *     tags: [Coaches]
  *     security:
  *       - bearerAuth: []
@@ -231,18 +289,21 @@ router.get(
  *         application/json:
  *           schema:
  *             type: object
- *             description: Provide at least one field to update.
+ *             minProperties: 1
  *             properties:
+ *               subjectIds:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 1
+ *                 items:
+ *                   type: string
+ *                 description: Array with exactly one existing subject ID. A coach cannot change to a different subject while assigned to a class.
  *               fullName:
  *                 type: string
  *                 example: Nguyen Van B
  *               phone:
  *                 type: string
  *                 example: "0912345678"
- *               subjectId:
- *                 type: string
- *                 description: New sport subject ID
- *                 example: 6ab6878512d539c14ac93548
  *     responses:
  *       200:
  *         description: Coach updated successfully
@@ -254,6 +315,8 @@ router.get(
  *         description: Access denied
  *       404:
  *         description: Coach or Subject not found
+ *       409:
+ *         description: Specialty conflicts with an assigned class
  *       500:
  *         description: Internal server error
  */

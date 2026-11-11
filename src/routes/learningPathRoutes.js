@@ -5,12 +5,64 @@ const {
   getLearningPaths,
   updateLearningPath,
   deleteLearningPath,
+  applyLearningPath,
 } = require("../controllers/learningPathController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /api/learning-paths/{id}/apply:
+ *   post:
+ *     summary: Copy complete template lessons into an empty class (manager only, atomic)
+ *     tags: [Learning Paths]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [classId, expectedLessons]
+ *             properties:
+ *               classId:
+ *                 type: string
+ *               expectedLessons:
+ *                 type: array
+ *                 description: Template snapshot shown in preview; rejected if it changed
+ *                 items:
+ *                   type: object
+ *                   required: [id, title, description, order]
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     title:
+ *                       type: string
+ *                     description:
+ *                       type: string
+ *                     order:
+ *                       type: integer
+ *     responses:
+ *       201:
+ *         description: Independent class lessons created
+ *       400:
+ *         description: Invalid or incomplete curriculum, or wrong course
+ *       403:
+ *         description: Manager role required
+ *       409:
+ *         description: Preview changed or class already has lessons
+ */
+router.post("/:id/apply", authMiddleware, roleMiddleware("CENTER_MANAGER"), applyLearningPath);
 
 /**
  * @swagger

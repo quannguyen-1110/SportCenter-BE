@@ -3,28 +3,86 @@ const express = require("express");
 
 const {
   createPayment,
+  createPayosPayment,
   getPayments,
   updatePayment,
   simulatePaymentResult,
   createVnpayPaymentUrl,
   vnpayReturn,
+  verifyVnpayReturn,
   vnpayIpn,
   recordOfflinePayment,
   getPaymentReceipt,
   getPaymentStatusById,
 } = require("../controllers/paymentController");
+const { createPayosCheckout, payosWebhook } = require("../controllers/payosController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
 
+router.post("/payos/webhook", payosWebhook);
+router.get("/payos/return", (_req, res) => {
+  res.type("text").send("Quay lại ActiveHub và bấm Kiểm tra trạng thái mới nhất.");
+});
+/**
+ * @swagger
+ * /api/payments/payos:
+ *   post:
+ *     summary: Create a Mobile payOS payment
+ *     description: Requires classRegistrationId and paymentMethod ONLINE. Uses the registration priceSnapshot.
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [classRegistrationId, paymentMethod]
+ *             properties:
+ *               classRegistrationId:
+ *                 type: string
+ *               paymentMethod:
+ *                 type: string
+ *                 enum: [ONLINE]
+ *     responses:
+ *       201:
+ *         description: Mobile payOS payment created
+ *       200:
+ *         description: Existing pending payOS payment reused
+ *       409:
+ *         description: Registration cannot be paid or another provider is already pending
+ * /api/payments/{id}/checkout:
+ *   post:
+ *     summary: Create or reuse a Mobile payOS checkout URL
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: payOS checkout URL created or reused
+ *       404:
+ *         description: Owned payOS payment not found
+ */
+// Mobile creates payOS payments here; Web keeps POST / and POST /:id/vnpay.
+router.post("/payos", authMiddleware, roleMiddleware("MEMBER"), createPayosPayment);
+router.post("/:id/checkout", authMiddleware, roleMiddleware("MEMBER"), createPayosCheckout);
+
 /**
  * @swagger
  * /api/payments:
  *   get:
- *     summary: Get all payments
- *     description: Only RECEPTIONIST and CENTER_MANAGER can retrieve all payments.
+ *     summary: List payments
+ *     description: Members see their own payments. Receptionists and center managers see all payments.
  *     tags: [Payments]
  *     security:
  *       - bearerAuth: []
@@ -41,7 +99,7 @@ const router = express.Router();
 router.get(
   "/",
   authMiddleware,
-  roleMiddleware("RECEPTIONIST", "CENTER_MANAGER"),
+  roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
   getPayments
 );
 
@@ -277,6 +335,32 @@ router.post(
 // VNPay redirects the customer's browser here after payment.
 // No authentication required.
 router.get("/vnpay-return", vnpayReturn);
+
+/**
+ * @swagger
+ * /api/payments/vnpay/verify-return:
+ *   post:
+ *     summary: Verify a signed VNPay browser return for the logged-in member
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties:
+ *               type: string
+ *     responses:
+ *       200:
+ *         description: Verified payment and registration status
+ *       400:
+ *         description: Invalid response, signature or amount
+ *       403:
+ *         description: Payment belongs to another member
+ */
+router.post("/vnpay/verify-return", authMiddleware, roleMiddleware("MEMBER"), verifyVnpayReturn);
 
 // VNPay calls this endpoint server-to-server.
 // No authentication required.

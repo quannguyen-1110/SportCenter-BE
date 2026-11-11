@@ -1,148 +1,87 @@
 const Payment = require("../models/Payment");
 const ClassRegistration = require("../models/ClassRegistration");
 const Member = require("../models/Member");
-const { VNPay, ProductCode, VnpLocale } = require("vnpay");
+const { ProductCode, VnpLocale } = require("vnpay");
+const { getVnpay, vnpayDate, paymentError, verifyVnpayResponse, applyVnpayResponse } = require("../services/vnpayService");
 const mongoose = require("mongoose");
+const { payosClient, reconcilePayosPayment } = require("../services/payosService");
 
-const vnpay = new VNPay({
-  tmnCode: process.env.VNPAY_TMN_CODE,
-  secureSecret: process.env.VNPAY_HASH_SECRET,
-  vnpayHost: "https://sandbox.vnpayment.vn",
-  testMode: true,
-  hashAlgorithm: "SHA512",
-});
 
 // CREATE payment
-const createPayment = async (req, res) => {
+const createPaymentForProvider = async (req, res, provider) => {
   try {
-    const { classRegistrationId, paymentMethod } = req.body;
-
-    if (!classRegistrationId || !paymentMethod) {
-      return res.status(400).json({
-        success: false,
-        message: "classRegistrationId and paymentMethod are required",
-      });
+    const { classRegistrationId, paymentMethod } = req.body || {};
+    if (!mongoose.isValidObjectId(classRegistrationId) || !["CASH", "BANK_TRANSFER", "ONLINE"].includes(paymentMethod)) {
+      throw paymentError(400, "Valid classRegistrationId and paymentMethod are required");
     }
-
-    const classRegistration = await ClassRegistration.findById(
-      classRegistrationId
-    );
-
-    if (!classRegistration) {
-      return res.status(404).json({
-        success: false,
-        message: "Class registration not found",
-      });
+    if (provider === "PAYOS" && paymentMethod !== "ONLINE") {
+      throw paymentError(400, "Mobile payOS payments must use ONLINE");
     }
-// MEMBER can only create payment for their own registration.
-if (req.user.role === "MEMBER") {
-  const member = await Member.findOne({
-    userId: req.user.userId,
-  });
-
-  if (!member) {
-    return res.status(404).json({
-      success: false,
-      message: "Member profile not found",
+    const result = await mongoose.connection.transaction(async session => {
+      const registration = await ClassRegistration.findById(classRegistrationId).session(session);
+      if (!registration) throw paymentError(404, "Class registration not found");
+      if (req.user.role === "MEMBER") {
+        const member = await Member.findOne({ userId: req.user.userId }).session(session);
+        if (!member || String(member._id) !== String(registration.memberId)) throw paymentError(403, "You cannot access this payment");
+      }
+      if (registration.status !== "PENDING_PAYMENT") throw paymentError(409, "Registration is not awaiting payment");
+      // Serialize check/create for a registration, including concurrent browser requests.
+      await ClassRegistration.updateOne({ _id: registration._id }, { $inc: { __v: 1 } }, { session });
+      const existing = await Payment.findOne({ classRegistrationId, status: { $in: ["PENDING", "SUCCESS"] } }).session(session);
+      if (existing) {
+        if (existing.status === "SUCCESS") throw paymentError(409, "Registration already has a successful payment");
+        if (existing.paymentMethod !== paymentMethod) throw paymentError(409, "A payment with another method is already pending");
+        if (paymentMethod === "ONLINE" && Payment.providerOf(existing) !== provider) {
+          throw paymentError(409, "A payment with another provider is already pending");
+        }
+        return { payment: existing, registration, reused: true };
+      }
+      // Preserve the price agreed at registration, even if the course price changes.
+      const amount = registration.priceSnapshot;
+      if (!Number.isSafeInteger(amount) || amount <= 0) {
+        throw paymentError(400, "Registration priceSnapshot must be a positive whole VND amount");
+      }
+      const [payment] = await Payment.create([{
+        classRegistrationId, amount, paymentMethod,
+        paymentProvider: paymentMethod === "ONLINE" ? provider : undefined,
+        status: "PENDING", paymentDate: null,
+      }], { session });
+      return { payment, registration, reused: false };
     });
-  }
-
-  if (classRegistration.memberId.toString() !== member._id.toString()) {
-    return res.status(403).json({
-      success: false,
-      message: "You cannot create payment for another member's registration",
-    });
-  }
-}
-    if (classRegistration.status === "CANCELLED") {
-      return res.status(400).json({
-        success: false,
-        message: "Cannot make payment for a cancelled registration",
-      });
-    }
-
-    if (classRegistration.status === "CONFIRMED") {
-      return res.status(400).json({
-        success: false,
-        message: "This class registration is already confirmed",
-      });
-    }
-
-    const validPaymentMethods = ["CASH", "BANK_TRANSFER", "ONLINE"];
-
-    if (!validPaymentMethods.includes(paymentMethod)) {
-      return res.status(400).json({
-        success: false,
-        message: "paymentMethod must be CASH, BANK_TRANSFER or ONLINE",
-      });
-    }
-// Prevent duplicate pending or successful payments.
-const existingPayment = await Payment.findOne({
-  classRegistrationId: classRegistration._id,
-  status: { $in: ["PENDING", "SUCCESS"] },
-});
-
-if (existingPayment) {
-  return res.status(409).json({
-    success: false,
-    message: "A pending or successful payment already exists for this registration",
-    data: {
-      paymentId: existingPayment._id,
-      status: existingPayment.status,
-    },
-  });
-}
-    // Use the price saved when the member registered for the class.
-    const amount = classRegistration.priceSnapshot;
-
-    if (
-      typeof amount !== "number" ||
-      !Number.isFinite(amount) ||
-      amount <= 0
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Registration priceSnapshot must be greater than 0",
-      });
-    }
-
-    const payment = await Payment.create({
-      classRegistrationId: classRegistration._id,
-      amount,
-      paymentMethod,
-      status: "PENDING",
-      paymentDate: null,
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: "Payment created successfully",
+    const { payment, registration, reused } = result;
+    return res.status(reused ? 200 : 201).json({
+      success: true, message: reused ? "Pending payment reused" : "Payment created successfully",
       data: {
-        id: payment._id,
-        classRegistrationId: payment.classRegistrationId,
-        amount: payment.amount,
-        paymentMethod: payment.paymentMethod,
-        status: payment.status,
-        paymentDate: payment.paymentDate,
-        registrationStatus: classRegistration.status,
-        createdAt: payment.createdAt,
+        id: payment._id, classRegistrationId: payment.classRegistrationId,
+        amount: payment.amount, paymentMethod: payment.paymentMethod, status: payment.status,
+        paymentProvider: Payment.providerOf(payment),
+        paymentDate: payment.paymentDate, registrationStatus: registration.status, createdAt: payment.createdAt,
       },
     });
   } catch (error) {
-    console.error("Create payment error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
+    if (!error.status) console.error("Create payment error:", error.name);
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Could not create payment" });
   }
 };
 
 
-// GET all payments
+// Gateway selection belongs to explicit endpoints, not a shared environment switch.
+const createPayment = (req, res) => createPaymentForProvider(req, res, "VNPAY");
+const createPayosPayment = (req, res) => createPaymentForProvider(req, res, "PAYOS");
+
+// GET payments visible to the signed-in user
 const getPayments = async (req, res) => {
   try {
-    const payments = await Payment.find()
+    const filter = {};
+    if (req.user.role === "MEMBER") {
+      const member = await Member.findOne({ userId: req.user.userId }).select("_id");
+      const registrationIds = member
+        ? await ClassRegistration.distinct("_id", { memberId: member._id })
+        : [];
+      filter.classRegistrationId = { $in: registrationIds };
+    }
+
+    const payments = await Payment.find(filter)
       .populate({
         path: "classRegistrationId",
         populate: [
@@ -174,8 +113,6 @@ const getPayments = async (req, res) => {
 };
 
 // UPDATE payment
-
-// UPDATE payment
 const updatePayment = async (req, res) => {
   try {
     const { id } = req.params;
@@ -186,6 +123,10 @@ const updatePayment = async (req, res) => {
       paymentDate,
     } = req.body;
 
+    if (req.body.paymentProvider !== undefined) {
+      throw paymentError(400, "Payment provider cannot be changed");
+    }
+
     // Payment amount must never be changed through this endpoint.
     if (req.body.amount !== undefined) {
       return res.status(400).json({
@@ -195,6 +136,7 @@ const updatePayment = async (req, res) => {
       });
     }
 
+    if (!mongoose.isValidObjectId(id)) throw paymentError(400, "Invalid payment ID");
     const payment = await Payment.findById(id);
 
     if (!payment) {
@@ -255,6 +197,10 @@ if (req.user.role === "MEMBER") {
     });
   }
 }
+    if (payment.paymentMethod === "ONLINE" && paymentMethod !== undefined && paymentMethod !== "ONLINE") {
+      return res.status(409).json({ success: false, message: "Cannot change the method of an online payment" });
+    }
+
     if (classRegistration.status === "CANCELLED") {
       return res.status(400).json({
         success: false,
@@ -286,11 +232,21 @@ if (req.user.role === "MEMBER") {
       });
     }
 
-    if (paymentMethod !== undefined) {
-      payment.paymentMethod = paymentMethod;
+    if (paymentMethod !== undefined && paymentMethod !== payment.paymentMethod) {
+      const updated = await Payment.findOneAndUpdate(
+        { _id: payment._id, status: "PENDING", payosOrderCode: { $exists: false } },
+        { $set: { paymentMethod, ...(paymentMethod === "ONLINE" ? { paymentProvider: "VNPAY" } : {}) } },
+        { returnDocument: "after" }
+      );
+      if (!updated) {
+        return res.status(409).json({
+          success: false,
+          message: "Không thể đổi phương thức khi đã tạo yêu cầu payOS hoặc giao dịch đã được xử lý.",
+        });
+      }
+      payment.paymentMethod = updated.paymentMethod;
+      payment.updatedAt = updated.updatedAt;
     }
-
-    await payment.save();
 
     return res.status(200).json({
       success: true,
@@ -309,9 +265,9 @@ if (req.user.role === "MEMBER") {
   } catch (error) {
     console.error("Update payment error:", error);
 
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message: "Internal server error",
+      message: error.status ? error.message : "Internal server error",
     });
   }
 };
@@ -382,11 +338,11 @@ const simulatePaymentResult = async (req, res) => {
         message: "You cannot access this payment",
       });
     }
-// Only ONLINE payments can be simulated.
-if (payment.paymentMethod !== "ONLINE") {
+// Only Web ONLINE payments can be simulated.
+if (payment.paymentMethod !== "ONLINE" || Payment.providerOf(payment) !== "VNPAY") {
   return res.status(400).json({
     success: false,
-    message: "Only ONLINE payments can be simulated",
+    message: "Only Web ONLINE payments can be simulated",
   });
 }
     if (registration.status === "CANCELLED") {
@@ -427,10 +383,13 @@ if (payment.paymentMethod !== "ONLINE") {
 
 const createVnpayPaymentUrl = async (req, res) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: "Invalid payment ID" });
+    }
     if (process.env.PAYMENT_MODE === "mock") {
       return res.status(403).json({
         success: false,
-        message: "VNPay is disabled while PAYMENT_MODE=mock",
+        message: "VNPay is disabled in the current payment mode",
       });
     }
 
@@ -458,7 +417,10 @@ const createVnpayPaymentUrl = async (req, res) => {
       });
     }
 
-    const payment = await Payment.findById(id);
+    const payment = await Payment.findOne({
+      _id: id,
+      ...Payment.providerFilter("VNPAY"),
+    }).select("+vnpayUrl +vnpayExpiresAt");
 
     if (!payment) {
       return res.status(404).json({
@@ -506,32 +468,50 @@ const createVnpayPaymentUrl = async (req, res) => {
       });
     }
 
-    const vnpay = new VNPay({
-      tmnCode: process.env.VNPAY_TMN_CODE,
-      secureSecret: process.env.VNPAY_HASH_SECRET,
-      vnpayHost: "https://sandbox.vnpayment.vn",
-      testMode: true,
-      hashAlgorithm: "SHA512",
-    });
+    if (!Number.isSafeInteger(payment.amount) || payment.amount < 5000) {
+      return res.status(400).json({ success: false, message: "VNPay requires a whole VND amount of at least 5000 VND" });
+    }
+
+    if (payment.vnpayExpiresAt && payment.vnpayExpiresAt <= new Date()) {
+      await Payment.updateOne({ _id: id, status: "PENDING" }, { $set: { status: "FAILED" } });
+      return res.status(409).json({ success: false, message: "Payment link expired. Refresh and create a new payment." });
+    }
+    if (payment.vnpayUrl) {
+      return res.json({ success: true, message: "Pending VNPay URL reused", data: { paymentId: payment._id, amount: payment.amount, paymentUrl: payment.vnpayUrl } });
+    }
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const vnpay = getVnpay();
 
     const paymentUrl = vnpay.buildPaymentUrl({
       vnp_Amount: payment.amount,
       vnp_IpAddr:
-        req.ip?.replace(/^::ffff:/, "") || "127.0.0.1",
+        req.ip === "::1" ? "127.0.0.1" : req.ip?.replace(/^::ffff:/, "") || "127.0.0.1",
       vnp_TxnRef: payment._id.toString(),
       vnp_OrderInfo: `Payment ${payment._id}`,
       vnp_OrderType: ProductCode.Other,
       vnp_ReturnUrl: process.env.VNPAY_RETURN_URL,
       vnp_Locale: VnpLocale.VN,
+      vnp_CreateDate: vnpayDate(new Date()),
+      vnp_ExpireDate: vnpayDate(expiresAt),
     });
 
+    // Concurrent requests must return the same signed URL/reference.
+    const saved = await Payment.findOneAndUpdate(
+      { _id: id, status: "PENDING", ...Payment.providerFilter("VNPAY"), vnpayUrl: { $exists: false } },
+      { $set: { vnpayUrl: paymentUrl, vnpayExpiresAt: expiresAt } },
+      { returnDocument: "after" }
+    ).select("+vnpayUrl");
+    const current = saved || await Payment.findById(id).select("+vnpayUrl");
+    if (current?.status !== "PENDING" || Payment.providerOf(current) !== "VNPAY" || current.payosOrderCode != null || !current.vnpayUrl) {
+      return res.status(409).json({ success: false, message: "Payment status changed. Please refresh." });
+    }
     return res.status(200).json({
       success: true,
       message: "VNPay payment URL created",
       data: {
         paymentId: payment._id,
         amount: payment.amount,
-        paymentUrl,
+        paymentUrl: current.vnpayUrl,
       },
     });
   } catch (error) {
@@ -547,212 +527,43 @@ const createVnpayPaymentUrl = async (req, res) => {
 // VNPay browser return URL
 const vnpayReturn = async (req, res) => {
   try {
-    const result = vnpay.verifyReturnUrl(req.query);
-
-    if (!result.isVerified) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid VNPay signature",
-      });
-    }
-
-    const payment = await Payment.findById(result.vnp_TxnRef);
-
-    if (!payment) {
-      return res.status(404).json({
-        success: false,
-        message: "Payment not found",
-      });
-    }
-
-    // VNPay returns vnp_Amount multiplied by 100.
-const expectedVnpayAmount = Number(payment.amount) * 100;
-
-if (Number(result.vnp_Amount) !== expectedVnpayAmount) {
-  return res.status(400).json({
-    success: false,
-    message: "Payment amount does not match",
-  });
-}
-
-// Prevent duplicate callbacks from changing payment status.
-if (payment.status === "SUCCESS") {
-  return res.status(200).json({
-    success: true,
-    message: "Payment was already confirmed",
-    data: {
-      paymentId: payment._id,
-      status: payment.status,
-    },
-  });
-}
-
-// Do not allow a FAILED payment to become SUCCESS through a late callback.
-if (payment.status === "FAILED") {
-  return res.status(200).json({
-    success: false,
-    message: "Payment was already marked as FAILED",
-    data: {
-      paymentId: payment._id,
-      status: payment.status,
-    },
-  });
-}
-
-// Find related registration.
-const registration = await ClassRegistration.findById(
-  payment.classRegistrationId
-);
-
-if (!registration) {
-  return res.status(404).json({
-    success: false,
-    message: "Class registration not found",
-  });
-}
-
-if (result.isSuccess) {
-  payment.status = "SUCCESS";
-  payment.paymentDate = new Date();
-  await payment.save();
-
-  // Only confirm registrations that are still awaiting payment.
-  if (registration.status === "PENDING_PAYMENT") {
-    registration.status = "CONFIRMED";
-    await registration.save();
-  }
-} else {
-  payment.status = "FAILED";
-  await payment.save();
-}
-
-return res.status(200).json({
-  success: result.isSuccess,
-  message:
-    result.isSuccess && registration.status === "CANCELLED"
-      ? "Payment succeeded, but registration is cancelled. Manual refund handling is required."
-      : result.message,
-  data: {
-    paymentId: payment._id,
-    status: payment.status,
-    registrationStatus: registration.status,
-  },
-});
+    const result = verifyVnpayResponse(req.query);
+    const data = await applyVnpayResponse(result);
+    return res.json({ success: data.status === "SUCCESS", message: data.manualRefundRequired ? "Payment succeeded, but registration is cancelled. Manual refund handling is required." : "VNPay response verified", data });
   } catch (error) {
-    console.error("VNPay return error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Could not process VNPay return",
-    });
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Could not process VNPay return" });
   }
 };
 
+// Authenticated browser relay: supports a direct return to the FE on localhost.
+const verifyVnpayReturn = async (req, res) => {
+  try {
+    const result = verifyVnpayResponse(req.body);
+    const data = await applyVnpayResponse(result, req.user);
+    return res.json({ success: true, message: data.manualRefundRequired ? "Payment succeeded, but registration is cancelled. Manual refund handling is required." : "VNPay response verified", data });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Could not verify VNPay return" });
+  }
+};
 
-// VNPay server-to-server IPN callback
 const vnpayIpn = async (req, res) => {
   try {
-    const result = vnpay.verifyIpnCall(req.query);
-
-    // Verify VNPay signature.
-    if (!result.isVerified) {
-      return res.status(200).json({
-        RspCode: "97",
-        Message: "Invalid signature",
-      });
-    }
-
-    // Find payment using VNPay transaction reference.
-    const payment = await Payment.findById(result.vnp_TxnRef);
-
-    if (!payment) {
-      return res.status(200).json({
-        RspCode: "01",
-        Message: "Order not found",
-      });
-    }
-
-    // Only ONLINE payments can be processed by VNPay.
-    if (payment.paymentMethod !== "ONLINE") {
-      return res.status(200).json({
-        RspCode: "04",
-        Message: "Invalid payment method",
-      });
-    }
-
-    // Verify the amount returned by VNPay.
-    // VNPay sends the amount multiplied by 100.
-    const expectedVnpayAmount = Number(payment.amount) * 100;
-
-    if (Number(result.vnp_Amount) !== expectedVnpayAmount) {
-      return res.status(200).json({
-        RspCode: "04",
-        Message: "Invalid amount",
-      });
-    }
-
-    // Prevent duplicate callbacks from changing a successful payment.
-    if (payment.status === "SUCCESS") {
-      return res.status(200).json({
-        RspCode: "02",
-        Message: "Order already confirmed",
-      });
-    }
-
-    // Do not allow a FAILED payment to become SUCCESS
-    // through a late callback.
-    if (payment.status === "FAILED") {
-      return res.status(200).json({
-        RspCode: "00",
-        Message: "Payment was already processed",
-      });
-    }
-
-    // Find the related class registration.
-    const registration = await ClassRegistration.findById(
-      payment.classRegistrationId
-    );
-
-    if (!registration) {
-      return res.status(200).json({
-        RspCode: "01",
-        Message: "Class registration not found",
-      });
-    }
-
-    if (result.isSuccess) {
-      payment.status = "SUCCESS";
-      payment.paymentDate = new Date();
-
-      await payment.save();
-
-      // Only confirm registrations that are still awaiting payment.
-      if (registration.status === "PENDING_PAYMENT") {
-        registration.status = "CONFIRMED";
-        await registration.save();
-      }
-    } else {
-      payment.status = "FAILED";
-      await payment.save();
-    }
-
-    return res.status(200).json({
-      RspCode: "00",
-      Message:
-        result.isSuccess && registration.status === "CANCELLED"
-          ? "Payment successful, but registration is cancelled. Manual refund handling is required."
-          : "Confirm Success",
+    const result = verifyVnpayResponse(req.query, true);
+    const data = await applyVnpayResponse(result);
+    const alreadyConfirmed = data.duplicate && data.status === "SUCCESS";
+    return res.json({
+      RspCode: alreadyConfirmed ? "02" : "00",
+      Message: data.manualRefundRequired
+        ? "Payment successful, but registration is cancelled. Manual refund handling is required."
+        : alreadyConfirmed ? "Order already confirmed" : data.duplicate ? "Payment was already processed" : "Confirm Success",
     });
   } catch (error) {
-    console.error("VNPay IPN error:", error);
-
-    return res.status(200).json({
-      RspCode: "99",
-      Message: "Unknown error",
-    });
+    return res.json({ RspCode: error.ipnCode || "99", Message: error.status ? error.message : "Unknown error" });
   }
 };
 
 // RECORD OFFLINE PAYMENT AT FRONT DESK
+
 const recordOfflinePayment = async (req, res) => {
   try {
     const { id } = req.params;
@@ -855,23 +666,26 @@ const getPaymentReceipt = async (req, res) => {
       });
     }
 
-    const payment = await Payment.findById(id).populate({
-      path: "classRegistrationId",
-      populate: [
-        {
-          path: "memberId",
-          select: "fullName phone userId",
-        },
-        {
-          path: "classId",
-          select: "name courseId",
-          populate: {
-            path: "courseId",
-            select: "name",
+    const payment = await Payment.findById(id)
+      .select("amount paymentMethod paymentDate status classRegistrationId")
+      .populate({
+        path: "classRegistrationId",
+        select: "classId memberId",
+        populate: [
+          {
+            path: "memberId",
+            select: "fullName phone userId",
           },
-        },
-      ],
-    });
+          {
+            path: "classId",
+            select: "name courseId",
+            populate: {
+              path: "courseId",
+              select: "name",
+            },
+          },
+        ],
+      }).lean();
 
     if (!payment) {
       return res.status(404).json({
@@ -897,15 +711,11 @@ const getPaymentReceipt = async (req, res) => {
       });
     }
 
-    // Members can only print their own receipt.
+    // Ownership is already available in the populated member; no extra query.
     if (req.user.role === "MEMBER") {
-      const currentMember = await Member.findOne({
-        userId: req.user.userId,
-      });
-
       if (
-        !currentMember ||
-        currentMember._id.toString() !== registration.memberId._id.toString()
+        !registration.memberId.userId ||
+        registration.memberId.userId.toString() !== req.user.userId.toString()
       ) {
         return res.status(403).json({
           success: false,
@@ -1019,8 +829,8 @@ const getPaymentStatusById = async (req, res) => {
     }
 
     // Find payment
-    const payment = await Payment.findById(id).select(
-      "_id classRegistrationId status paymentDate"
+    let payment = await Payment.findById(id).select(
+      "_id classRegistrationId status paymentDate amount paymentMethod paymentProvider payosOrderCode"
     );
 
     if (!payment) {
@@ -1031,7 +841,7 @@ const getPaymentStatusById = async (req, res) => {
     }
 
     // Find related class registration
-    const registration = await ClassRegistration.findById(
+    let registration = await ClassRegistration.findById(
       payment.classRegistrationId
     ).select("memberId status");
 
@@ -1065,6 +875,22 @@ const getPaymentStatusById = async (req, res) => {
       }
     }
 
+    const provider = Payment.providerOf(payment);
+    if (payment.status === "PENDING" && provider === "PAYOS" && payment.payosOrderCode) {
+      const client = payosClient();
+      if (!client) return res.status(503).json({ success: false, message: "BE chưa có đủ khóa cấu hình payOS." });
+      try {
+        await reconcilePayosPayment(client, payment);
+      } catch (error) {
+        console.error("payOS status check failed:", error.name);
+        return res.status(502).json({ success: false, message: "Chưa kiểm tra được giao dịch payOS. Vui lòng thử lại." });
+      }
+      [payment, registration] = await Promise.all([
+        Payment.findById(id).select("status paymentDate"),
+        ClassRegistration.findById(registration._id).select("status"),
+      ]);
+    }
+
     return res.status(200).json({
       success: true,
       message: "Payment status retrieved successfully",
@@ -1073,6 +899,8 @@ const getPaymentStatusById = async (req, res) => {
         status: payment.status,
         paymentDate: payment.paymentDate,
         registrationStatus: registration.status,
+        paymentProvider: provider,
+        manualRefundRequired: payment.status === "SUCCESS" && registration.status === "CANCELLED",
       },
     });
   } catch (error) {
@@ -1086,11 +914,13 @@ const getPaymentStatusById = async (req, res) => {
 };
 module.exports = {
   createPayment,
+  createPayosPayment,
   getPayments,
   updatePayment,
   simulatePaymentResult,
   createVnpayPaymentUrl,
   vnpayReturn,
+  verifyVnpayReturn,
   vnpayIpn,
   recordOfflinePayment,
   getPaymentReceipt,

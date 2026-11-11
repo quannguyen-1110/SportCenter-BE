@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { hasDeletionDependencies } = require("../services/deletionDependencies");
 
 const Schedule = require("../models/Schedule");
 const Member = require("../models/Member");
@@ -590,6 +591,9 @@ const deleteSchedule = async (req, res) => {
       });
     }
 
+    if (await hasDeletionDependencies("schedule", schedule)) {
+      return res.status(409).json({ success: false, message: "Cannot delete schedule because attendance records exist" });
+    }
     await Schedule.findByIdAndDelete(id);
 
     return res.status(200).json({

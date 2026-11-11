@@ -67,12 +67,6 @@ router.get("/", authMiddleware, getClasses);
  *                 type: string
  *                 description: Optional; if supplied, must match the course subject.
  *                 example: 65abc12345678901234567890
- *               classType:
- *                 type: string
- *                 enum: [GROUP, PERSONAL]
- *                 default: GROUP
- *                 description: GROUP accepts multiple members; PERSONAL accepts one active registration.
- *                 example: GROUP
  *     responses:
  *       201:
  *         description: Class created successfully
@@ -96,7 +90,7 @@ router.post("/", authMiddleware, roleMiddleware("CENTER_MANAGER"), createClass);
  * /api/classes/{id}:
  *   put:
  *     summary: Update a class
- *     description: Update class name, course, coach and optionally classType. Existing records cannot be moved to another course once dependent data exists.
+ *     description: Update class name, course and coach. Existing records cannot be moved to another course once dependent data exists.
  *     tags: [Classes]
  *     security:
  *       - bearerAuth: []
@@ -128,11 +122,6 @@ router.post("/", authMiddleware, roleMiddleware("CENTER_MANAGER"), createClass);
  *                 type: string
  *                 description: Optional; if supplied, must match the course subject.
  *                 example: 65abc12345678901234567890
- *               classType:
- *                 type: string
- *                 enum: [GROUP, PERSONAL]
- *                 description: Cannot be changed to PERSONAL while more than one registration is pending or confirmed.
- *                 example: PERSONAL
  *     responses:
  *       200:
  *         description: Class updated successfully
