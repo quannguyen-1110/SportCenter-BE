@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const { hasDeletionDependencies } = require("../services/deletionDependencies");
 
 const Schedule = require("../models/Schedule");
+const { persistSchedule } = require("../services/schedulePersistence");
 const Member = require("../models/Member");
 const ClassRegistration = require("../models/ClassRegistration");
 const Coach = require("../models/Coach");
@@ -22,6 +23,11 @@ const isValidTime = (time) =>
 
 // Normalize date to UTC midnight
 const normalizeDate = (value) => {
+  if (typeof value === "string") {
+    const day = value.match(/^(\d{4}-\d{2}-\d{2})(?:$|T)/)?.[1];
+    const calendar = new Date(day + "T00:00:00Z");
+    if (!day || Number.isNaN(calendar.getTime()) || calendar.toISOString().slice(0, 10) !== day) return null;
+  } else if (!(value instanceof Date)) return null;
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
@@ -159,15 +165,18 @@ const validateReferences = async (classId, lessonId, roomId) => {
 // Check whether the room has another schedule at an overlapping time
 const findRoomConflict = async ({
   roomId,
+  classId,
   date,
   startTime,
   endTime,
   excludeScheduleId = null,
 }) => {
   const { start, end } = getDayRange(date);
+  const assigned = classId ? await Class.findById(classId).select("coachId") : null;
+  const coachClasses = assigned ? await Class.find({ coachId: assigned.coachId }).select("_id") : [];
 
   const filter = {
-    roomId,
+    $or: [{ roomId }, ...(classId ? [{ classId: { $in: coachClasses.map(item => item._id).concat([classId]) } }] : [])],
     date: {
       $gte: start,
       $lt: end,
@@ -260,6 +269,7 @@ const createSchedule = async (req, res) => {
     if (scheduleStatus !== "CANCELLED") {
       const conflict = await findRoomConflict({
         roomId,
+        classId,
         date: normalizedDate,
         startTime,
         endTime,
@@ -280,7 +290,7 @@ const createSchedule = async (req, res) => {
       }
     }
 
-    const schedule = await Schedule.create({
+    const schedule = await persistSchedule({
       classId,
       lessonId,
       roomId,
@@ -302,9 +312,9 @@ const createSchedule = async (req, res) => {
   } catch (error) {
     console.error("Create schedule error:", error);
 
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message: "Internal server error",
+      message: error.status ? error.message : "Internal server error",
     });
   }
 };
@@ -312,7 +322,14 @@ const createSchedule = async (req, res) => {
 // GET all schedules
 const getSchedules = async (req, res) => {
   try {
-    const schedules = await populateSchedule(Schedule.find())
+    const filter = {};
+    if (req.user.role === "COACH") {
+      const coach = await Coach.findOne({ userId: req.user.userId });
+      if (!coach) return res.status(404).json({ success: false, message: "Coach profile not found" });
+      const classes = await Class.find({ coachId: coach._id }).select("_id");
+      filter.classId = { $in: classes.map(row => row._id) };
+    }
+    const schedules = await populateSchedule(Schedule.find(filter))
       .sort({
         date: 1,
         startTime: 1,
@@ -520,6 +537,7 @@ const updateSchedule = async (req, res) => {
     if (scheduleStatus !== "CANCELLED") {
       const conflict = await findRoomConflict({
         roomId,
+        classId,
         date: normalizedDate,
         startTime,
         endTime,
@@ -549,7 +567,7 @@ const updateSchedule = async (req, res) => {
     schedule.endTime = endTime;
     schedule.status = scheduleStatus;
 
-    await schedule.save();
+    await persistSchedule({ classId, lessonId, roomId, date: normalizedDate, startTime, endTime, status: scheduleStatus }, id);
 
     const result = await populateSchedule(
       Schedule.findById(schedule._id)
@@ -563,9 +581,9 @@ const updateSchedule = async (req, res) => {
   } catch (error) {
     console.error("Update schedule error:", error);
 
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message: "Internal server error",
+      message: error.status ? error.message : "Internal server error",
     });
   }
 };
@@ -813,6 +831,7 @@ const importSchedules = async (req, res) => {
         if (status !== "CANCELLED") {
           const conflict = await findRoomConflict({
             roomId,
+            classId,
             date,
             startTime,
             endTime,
@@ -828,7 +847,7 @@ const importSchedules = async (req, res) => {
           }
         }
 
-        const schedule = await Schedule.create({
+        const schedule = await persistSchedule({
           classId,
           lessonId,
           roomId,
@@ -850,7 +869,7 @@ const importSchedules = async (req, res) => {
 
         errors.push({
           row: excelRow,
-          message: "Failed to import this row",
+          message: rowError.status ? rowError.message : "Failed to import this row",
         });
       }
     }

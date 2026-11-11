@@ -37,6 +37,7 @@ const paymentSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     payosOrderCode: { type: Number, unique: true, sparse: true },
     payosCheckoutUrl: String,
     vnpayUrl: { type: String, select: false },

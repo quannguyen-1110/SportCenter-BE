@@ -19,6 +19,7 @@ const isValidId = (id) => mongoose.isValidObjectId(id);
 const getClassPrice = async classData => {
   const course = await Course.findById(classData.courseId);
   if (!course) return { success: false, statusCode: 404, message: "Course not found" };
+  if (course.status !== "ACTIVE") return { success: false, statusCode: 409, message: "Course is not accepting registrations" };
   const price = Course.tuitionOf(course);
   if (price === undefined) {
     return { success: false, statusCode: 400, message: "Course tuition has not been configured" };

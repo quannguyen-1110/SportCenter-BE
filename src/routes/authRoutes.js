@@ -123,6 +123,7 @@ router.post("/login", login);
  *         description: User not found
  */
 router.get("/me", authMiddleware, getMe);
+router.put("/password", authMiddleware, require("../controllers/authController").changePassword);
 
 /**
  * @swagger

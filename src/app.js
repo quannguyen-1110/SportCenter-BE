@@ -25,12 +25,14 @@ const lessonProgressRoutes = require("./routes/lessonProgressRoutes");
 const roomRoutes = require("./routes/roomRoutes");
 const homeworkRoutes = require("./routes/homeworkRoutes");
 const staffRoutes = require("./routes/staffRoutes");
+const reportRoutes = require("./routes/reportRoutes");
 
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(require("./middlewares/activityEvents"));
 
 // API Routes
 app.use("/api/auth", authRoutes);
@@ -54,6 +56,7 @@ app.use("/api/lesson-progress", lessonProgressRoutes);
 app.use("/api/rooms", roomRoutes);
 app.use("/api/homeworks", homeworkRoutes);
 app.use("/api/staff", staffRoutes);
+app.use("/api/reports", reportRoutes);
 // Swagger
 app.use(
   "/api-docs",
@@ -66,6 +69,12 @@ app.get("/", (req, res) => {
   res.json({
     message: "Sport Center API is running",
   });
+});
+
+app.use((error, _req, res, next) => {
+  if (res.headersSent) return next(error);
+  return res.status(error.type === "entity.parse.failed" ? 400 : 500).json({ success: false,
+    message: error.type === "entity.parse.failed" ? "Invalid JSON request body" : "Internal server error" });
 });
 
 module.exports = app;

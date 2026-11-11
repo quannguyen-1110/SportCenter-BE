@@ -137,6 +137,7 @@ if (lesson.classId.toString() !== classData._id.toString()) {
     });
   } catch (error) {
     console.error("Create attendance error:", error);
+    if (error.code === 11000) return res.status(409).json({ success: false, message: "Attendance already recorded" });
 
     return res.status(500).json({
       success: false,
@@ -289,7 +290,20 @@ if (lesson.classId.toString() !== classData._id.toString()) {
 // GET all attendances
 const getAttendances = async (req, res) => {
   try {
-    const attendances = await Attendance.find()
+    let filter = {};
+    if (req.user.role === "MEMBER") {
+      const member = await Member.findOne({ userId: req.user.userId });
+      if (!member) return res.status(404).json({ success: false, message: "Member profile not found" });
+      filter.memberId = member._id;
+    } else if (req.user.role === "COACH") {
+      const coach = await Coach.findOne({ userId: req.user.userId });
+      if (!coach) return res.status(404).json({ success: false, message: "Coach profile not found" });
+      const classes = await Class.find({ coachId: coach._id }).select("_id");
+      filter.classId = { $in: classes.map(row => row._id) };
+    } else if (!["CENTER_MANAGER", "RECEPTIONIST"].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+    const attendances = await Attendance.find(filter)
       .populate(
         "memberId",
         "fullName phone goal level"

@@ -213,6 +213,7 @@ router.put(
 router.get(
   "/",
   authMiddleware,
+  roleMiddleware("COACH", "RECEPTIONIST", "CENTER_MANAGER"),
   getMembers
 );
 

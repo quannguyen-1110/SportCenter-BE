@@ -3,9 +3,10 @@ const User = require("../models/User");
 
 const createActivityLog = async (req, res) => {
   try {
-    const { userId, action } = req.body;
+    const { action } = req.body;
+    const userId = req.user.userId;
 
-    if (!userId || !action) {
+    if (typeof action !== "string" || !action.trim() || action.length > 2000) {
       return res.status(400).json({
         success: false,
         message: "userId and action are required",

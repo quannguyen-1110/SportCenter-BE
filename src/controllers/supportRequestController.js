@@ -151,7 +151,7 @@ const getSupportRequests = async (req, res) => {
 const updateSupportRequestStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, note } = req.body;
 
     if (!isValidId(id)) {
       return res.status(400).json({
@@ -160,11 +160,14 @@ const updateSupportRequestStatus = async (req, res) => {
       });
     }
 
-    if (!VALID_STATUSES.includes(status)) {
+    if ((status !== undefined && !VALID_STATUSES.includes(status)) || (status === undefined && note === undefined)) {
       return res.status(400).json({
         success: false,
         message: "status must be PENDING or RESOLVED",
       });
+    }
+    if (note !== undefined && (typeof note !== "string" || !note.trim() || note.trim().length > 2000)) {
+      return res.status(400).json({ success: false, message: "Handling note must contain 1 to 2000 characters" });
     }
 
     const supportRequest = await SupportRequest.findById(id);
@@ -176,7 +179,12 @@ const updateSupportRequestStatus = async (req, res) => {
       });
     }
 
-    supportRequest.status = status;
+    if (status !== undefined) {
+      supportRequest.status = status;
+      supportRequest.resolvedAt = status === "RESOLVED" ? new Date() : null;
+    }
+    supportRequest.handledBy = req.user.userId;
+    if (note !== undefined) supportRequest.handlingNotes.push({ text: note.trim(), staffId: req.user.userId });
     await supportRequest.save();
 
     await supportRequest.populate(

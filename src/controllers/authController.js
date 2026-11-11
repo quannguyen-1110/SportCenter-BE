@@ -35,6 +35,9 @@ const register = async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ success: false, message: "Invalid email format" });
+    }
 
     const existingUser = await User.findOne({
       email: normalizedEmail,
@@ -87,7 +90,7 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (typeof email !== "string" || !email.trim() || typeof password !== "string" || !password) {
       return res.status(400).json({
         success: false,
         message: "Email and password are required",
@@ -96,7 +99,7 @@ const login = async (req, res) => {
 
     const user = await User.findOne({
   email: email.toLowerCase().trim(),
-}).select("+passwordHash");
+}).select("+passwordHash +tokenVersion");
 
     if (!user) {
       return res.status(401).json({
@@ -112,6 +115,7 @@ const login = async (req, res) => {
       });
     }
 
+    if (!user.passwordHash) return res.status(401).json({ success: false, message: "Use the sign-in method associated with this account" });
     const isPasswordValid = await bcrypt.compare(
       password,
       user.passwordHash
@@ -128,10 +132,11 @@ const login = async (req, res) => {
       {
         userId: user._id,
         role: user.role,
+        tokenVersion: user.tokenVersion || 0,
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: process.env.JWT_EXPIRES_IN,
+        expiresIn: process.env.JWT_EXPIRES_IN || "7d",
       }
     );
 
@@ -449,4 +454,20 @@ module.exports = {
   googleLogin,
   verifyGoogleOTP,
   getMe,
+};
+
+module.exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    if (typeof currentPassword !== "string" || typeof newPassword !== "string" || newPassword.length < 6 || newPassword.length > 72 || currentPassword === newPassword) {
+      return res.status(400).json({ success: false, message: "Provide current password and a different new password of 6 to 72 characters" });
+    }
+    const user = await User.findById(req.user.userId).select("+passwordHash +tokenVersion");
+    if (user.authProvider !== "LOCAL") return res.status(409).json({ success: false, message: "Manage your password through your Google account" });
+    if (!await bcrypt.compare(currentPassword, user.passwordHash)) return res.status(403).json({ success: false, message: "Current password is incorrect" });
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const updated = await User.updateOne({ _id: user._id, passwordHash: user.passwordHash }, { $set: { passwordHash }, $inc: { tokenVersion: 1 } });
+    if (!updated.modifiedCount) return res.status(409).json({ success: false, message: "Password changed elsewhere; sign in again" });
+    return res.json({ success: true, message: "Password changed; sign in again", data: { reauthenticate: true } });
+  } catch (error) { return res.status(500).json({ success: false, message: "Could not change password" }); }
 };

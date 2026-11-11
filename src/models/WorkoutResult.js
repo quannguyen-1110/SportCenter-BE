@@ -13,6 +13,8 @@ const workoutResultSchema = new mongoose.Schema(
       ref: "Member",
       required: true,
     },
+    scheduleId: { type: mongoose.Schema.Types.ObjectId, ref: "Schedule", default: null },
+    classId: { type: mongoose.Schema.Types.ObjectId, ref: "Class", default: null },
 
     result: {
       type: String,

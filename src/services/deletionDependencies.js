@@ -19,7 +19,8 @@ async function hasDeletionDependencies(kind, record) {
     start.setUTCHours(0, 0, 0, 0);
     const end = new Date(start);
     end.setUTCDate(end.getUTCDate() + 1);
-    return Boolean(await models.Attendance.exists({ classId: record.classId, lessonId: record.lessonId, date: { $gte: start, $lt: end } }));
+    return Boolean(await models.Attendance.exists({ classId: record.classId, lessonId: record.lessonId, date: { $gte: start, $lt: end } }) ||
+      await models.WorkoutResult.exists({ scheduleId: record._id }));
   }
   if (!dependencies[kind]) throw new Error("Unknown deletion dependency type");
   const matches = await Promise.all(dependencies[kind].map(([name, field]) => models[name].exists({ [field]: record._id })));

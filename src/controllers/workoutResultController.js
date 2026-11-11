@@ -2,6 +2,9 @@ const WorkoutResult = require("../models/WorkoutResult");
 const WorkoutPlan = require("../models/WorkoutPlan");
 const Member = require("../models/Member");
 const Coach = require("../models/Coach");
+const mongoose = require("mongoose");
+const Schedule = require("../models/Schedule");
+const { coachCanAccessMember, coachTrainingScope } = require("../services/coachAccess");
 
 const getCoachForUser = async (userId) => {
   return Coach.findOne({ userId });
@@ -10,9 +13,11 @@ const getCoachForUser = async (userId) => {
 // CREATE workout result — Coach only
 const createWorkoutResult = async (req, res) => {
   try {
-    const { workoutPlanId, memberId, result, comment } = req.body;
+    const { workoutPlanId, memberId, result, comment, scheduleId } = req.body;
 
-    if (!workoutPlanId || !memberId || !result?.trim()) {
+    if (!mongoose.isValidObjectId(workoutPlanId) || !mongoose.isValidObjectId(memberId) ||
+        typeof result !== "string" || !result.trim() || (comment !== undefined && typeof comment !== "string") ||
+        (scheduleId !== undefined && scheduleId !== null && !mongoose.isValidObjectId(scheduleId))) {
       return res.status(400).json({
         success: false,
         message: "workoutPlanId, memberId and result are required",
@@ -44,11 +49,24 @@ const createWorkoutResult = async (req, res) => {
       });
     }
 
-    if (workoutPlan.memberId.toString() !== memberId) {
+    if (workoutPlan.memberId && workoutPlan.memberId.toString() !== memberId) {
       return res.status(400).json({
         success: false,
         message: "Member does not match the workout plan",
       });
+    }
+    if (!await coachCanAccessMember(coach._id, memberId, workoutPlan.classId)) {
+      return res.status(403).json({ success: false, message: "Member is not confirmed in your assigned class" });
+    }
+    let resultClassId = workoutPlan.classId;
+    if (scheduleId) {
+      const schedule = await Schedule.findById(scheduleId);
+      if (!schedule || schedule.status === "CANCELLED" ||
+          (resultClassId && String(schedule.classId) !== String(resultClassId)) ||
+          !await coachCanAccessMember(coach._id, memberId, schedule.classId)) {
+        return res.status(400).json({ success: false, message: "Session, member and training plan must belong to your assigned class" });
+      }
+      resultClassId = schedule.classId;
     }
 
     const member = await Member.findById(memberId);
@@ -65,6 +83,8 @@ const createWorkoutResult = async (req, res) => {
       memberId,
       result: result.trim(),
       comment: comment ? comment.trim() : "",
+      scheduleId: scheduleId || null,
+      classId: resultClassId || null,
     });
 
     return res.status(201).json({
@@ -107,7 +127,7 @@ const getWorkoutResults = async (req, res) => {
         });
       }
 
-      const plans = await WorkoutPlan.find({ coachId: coach._id }).select("_id");
+      const plans = await WorkoutPlan.find({ coachId: coach._id, ...await coachTrainingScope(coach._id) }).select("_id");
       filter.workoutPlanId = { $in: plans.map((plan) => plan._id) };
     } else if (req.user.role !== "CENTER_MANAGER") {
       return res.status(403).json({
@@ -126,6 +146,7 @@ const getWorkoutResults = async (req, res) => {
         },
       })
       .populate("memberId", "fullName phone goal level")
+      .populate("scheduleId", "date startTime endTime lessonId classId")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -148,7 +169,9 @@ const updateWorkoutResult = async (req, res) => {
     const { id } = req.params;
     const { result, comment } = req.body;
 
-    if (!result?.trim()) {
+    if (!mongoose.isValidObjectId(id) || typeof result !== "string" || !result.trim() ||
+        (comment !== undefined && typeof comment !== "string") ||
+        ["memberId", "workoutPlanId", "scheduleId", "classId"].some(key => req.body[key] !== undefined)) {
       return res.status(400).json({
         success: false,
         message: "result is required",
@@ -191,6 +214,9 @@ const updateWorkoutResult = async (req, res) => {
       });
     }
 
+    if (!await coachCanAccessMember(coach._id, workoutResult.memberId, workoutResult.classId || workoutPlan.classId)) {
+      return res.status(403).json({ success: false, message: "Member is no longer confirmed in your assigned class" });
+    }
     workoutResult.result = result.trim();
     workoutResult.comment = comment ? comment.trim() : "";
 

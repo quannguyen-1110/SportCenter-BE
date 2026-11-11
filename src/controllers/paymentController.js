@@ -567,90 +567,34 @@ const vnpayIpn = async (req, res) => {
 const recordOfflinePayment = async (req, res) => {
   try {
     const { id } = req.params;
-
-    if (!mongoose.isValidObjectId(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid payment ID",
-      });
-    }
-
-    const payment = await Payment.findById(id);
-
-    if (!payment) {
-      return res.status(404).json({
-        success: false,
-        message: "Payment not found",
-      });
-    }
-
-    if (!["CASH", "BANK_TRANSFER"].includes(payment.paymentMethod)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Only CASH or BANK_TRANSFER payments can be recorded at the front desk",
-      });
-    }
-
-    if (payment.status !== "PENDING") {
-      return res.status(409).json({
-        success: false,
-        message: "Only pending payments can be recorded",
-      });
-    }
-
-    const registration = await ClassRegistration.findById(
-      payment.classRegistrationId
-    );
-
-    if (!registration) {
-      return res.status(404).json({
-        success: false,
-        message: "Class registration not found",
-      });
-    }
-
-    if (registration.status === "CANCELLED") {
-      return res.status(400).json({
-        success: false,
-        message: "Cannot record payment for a cancelled registration",
-      });
-    }
-
-    if (registration.status === "CONFIRMED") {
-      return res.status(409).json({
-        success: false,
-        message: "Registration is already confirmed",
-      });
-    }
-
-    payment.status = "SUCCESS";
-    payment.paymentDate = new Date();
-    await payment.save();
-
-    registration.status = "CONFIRMED";
-    await registration.save();
-
-    return res.status(200).json({
-      success: true,
-      message: "Payment recorded successfully",
-      data: {
-        paymentId: payment._id,
-        amount: payment.amount,
-        paymentMethod: payment.paymentMethod,
-        status: payment.status,
-        paymentDate: payment.paymentDate,
-        registrationId: registration._id,
-        registrationStatus: registration.status,
-      },
+    if (!mongoose.isValidObjectId(id)) throw paymentError(400, "Invalid payment ID");
+    if (req.body?.amount !== undefined) throw paymentError(400, "Payment amount cannot be changed");
+    const data = await mongoose.connection.transaction(async session => {
+      const payment = await Payment.findById(id).session(session);
+      if (!payment) throw paymentError(404, "Payment not found");
+      if (!["CASH", "BANK_TRANSFER"].includes(payment.paymentMethod)) throw paymentError(400, "Only offline payments can be recorded at reception");
+      if (payment.status !== "PENDING") throw paymentError(409, "Only pending payments can be recorded");
+      const registration = await ClassRegistration.findById(payment.classRegistrationId).session(session);
+      if (!registration) throw paymentError(404, "Class registration not found");
+      if (registration.status !== "PENDING_PAYMENT") throw paymentError(409, "Registration is not awaiting payment");
+      if (payment.amount !== registration.priceSnapshot) throw paymentError(409, "Payment amount does not match the agreed tuition");
+      await ClassRegistration.updateOne({ _id: registration._id }, { $inc: { __v: 1 } }, { session });
+      const paid = await Payment.findOneAndUpdate(
+        { _id: payment._id, status: "PENDING", paymentMethod: { $in: ["CASH", "BANK_TRANSFER"] } },
+        { $set: { status: "SUCCESS", paymentDate: new Date(), recordedBy: req.user.userId } },
+        { session, returnDocument: "after", runValidators: true }
+      );
+      if (!paid) throw paymentError(409, "Payment has already been processed");
+      registration.status = "CONFIRMED";
+      await registration.save({ session });
+      return { paymentId: paid._id, amount: paid.amount, paymentMethod: paid.paymentMethod,
+        status: paid.status, paymentDate: paid.paymentDate, recordedBy: paid.recordedBy,
+        registrationId: registration._id, registrationStatus: registration.status };
     });
+    return res.json({ success: true, message: "Payment recorded successfully", data });
   } catch (error) {
-    console.error("Record offline payment error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
+    if (!error.status) console.error("Record offline payment failed:", error.name);
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Could not record payment" });
   }
 };
 

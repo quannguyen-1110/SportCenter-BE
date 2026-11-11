@@ -10,9 +10,13 @@ build/
 npm-debug.log*
 
 # Local verification utilities and generated artifacts
-/test/
+/test/*
+!/test/paymentProviders.integration.cjs
+!/test/fullFeatureAudit.integration.cjs
+!/test/auditFixture.cjs
 /tests/
-/docs/
+/docs/*
+!/docs/WEB_FEATURE_AUDIT.md
 /scripts/
 /.temp/
 /.payment-local-test/

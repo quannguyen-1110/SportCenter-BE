@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "src/server.js",
   "scripts": {
+    "test": "node --test --test-concurrency=1 test/paymentProviders.integration.cjs test/fullFeatureAudit.integration.cjs",
     "dev": "nodemon src/server.js",
     "start": "node src/server.js"
   },

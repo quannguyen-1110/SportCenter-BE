@@ -71,4 +71,7 @@ router.post(
   createStaffAccount
 );
 
+router.get("/accounts", authMiddleware, roleMiddleware("CENTER_MANAGER"), require("../controllers/staffController").getStaffAccounts);
+router.put("/accounts/:id", authMiddleware, roleMiddleware("CENTER_MANAGER"), require("../controllers/staffController").updateStaffAccount);
+
 module.exports = router;
