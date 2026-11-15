@@ -1,3 +1,5 @@
+const mongoose = require("mongoose");
+
 const ActivityLog = require("../models/ActivityLog");
 const User = require("../models/User");
 
@@ -12,6 +14,13 @@ const createActivityLog = async (req, res) => {
       });
     }
 
+    if (!mongoose.isValidObjectId(userId) || typeof action !== "string" || !action.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid userId or action",
+      });
+    }
+
     const user = await User.findById(userId);
 
     if (!user) {
@@ -23,6 +32,7 @@ const createActivityLog = async (req, res) => {
 
     const activityLog = await ActivityLog.create({
       userId,
+      role: user.role,
       action: action.trim(),
     });
 
@@ -46,19 +56,49 @@ const createActivityLog = async (req, res) => {
   }
 };
 
-// Get all activity logs
+// GET /api/activity-logs?userId=&role=&from=&to=&page=1&limit=50
 const getActivityLogs = async (req, res) => {
   try {
-    const activityLogs = await ActivityLog.find()
-      .populate(
-        "userId",
-        "email role status"
-      )
-      .sort({ createdAt: -1 });
+    const { userId, role, from, to } = req.query;
+    const filter = {};
+
+    if (userId) {
+      if (!mongoose.isValidObjectId(userId)) {
+        return res.status(400).json({ success: false, message: "Invalid userId" });
+      }
+      filter.userId = userId;
+    }
+
+    if (role) filter.role = String(role);
+
+    if (from || to) {
+      const start = from ? new Date(from) : null;
+      const end = to ? new Date(to) : null;
+      if ((start && Number.isNaN(start.getTime())) || (end && Number.isNaN(end.getTime()))) {
+        return res.status(400).json({ success: false, message: "Invalid from/to date" });
+      }
+      filter.createdAt = {};
+      if (start) filter.createdAt.$gte = start;
+      if (end) filter.createdAt.$lte = end;
+    }
+
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
+
+    const [total, activityLogs] = await Promise.all([
+      ActivityLog.countDocuments(filter),
+      ActivityLog.find(filter)
+        .populate("userId", "email fullName role status")
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+    ]);
 
     return res.status(200).json({
       success: true,
       message: "Activity logs retrieved successfully",
+      pagination: { page, limit, total },
       data: activityLogs,
     });
   } catch (error) {

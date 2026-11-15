@@ -41,6 +41,11 @@ const scheduleSchema = new mongoose.Schema(
       enum: ["SCHEDULED", "COMPLETED", "CANCELLED"],
       default: "SCHEDULED",
     },
+    // Set once the "upcoming session" reminder has been sent.
+    reminderSentAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

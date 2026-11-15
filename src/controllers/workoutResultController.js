@@ -2,6 +2,7 @@ const WorkoutResult = require("../models/WorkoutResult");
 const WorkoutPlan = require("../models/WorkoutPlan");
 const Member = require("../models/Member");
 const Coach = require("../models/Coach");
+const ClassRegistration = require("../models/ClassRegistration");
 
 const getCoachForUser = async (userId) => {
   return Coach.findOne({ userId });
@@ -44,7 +45,17 @@ const createWorkoutResult = async (req, res) => {
       });
     }
 
-    if (workoutPlan.memberId.toString() !== memberId) {
+    // Individual plans accept only their member; class plans accept any
+    // member confirmed in that class.
+    const matchesPlan = workoutPlan.memberId
+      ? workoutPlan.memberId.toString() === String(memberId)
+      : Boolean(workoutPlan.classId) && Boolean(await ClassRegistration.exists({
+        classId: workoutPlan.classId,
+        memberId,
+        status: "CONFIRMED",
+      }));
+
+    if (!matchesPlan) {
       return res.status(400).json({
         success: false,
         message: "Member does not match the workout plan",

@@ -25,12 +25,18 @@ const lessonProgressRoutes = require("./routes/lessonProgressRoutes");
 const roomRoutes = require("./routes/roomRoutes");
 const homeworkRoutes = require("./routes/homeworkRoutes");
 const staffRoutes = require("./routes/staffRoutes");
+const checkInRoutes = require("./routes/checkInRoutes");
+const membershipOrderRoutes = require("./routes/membershipOrderRoutes");
+const reportRoutes = require("./routes/reportRoutes");
+const aiRoutes = require("./routes/aiRoutes");
+const activityLogger = require("./middlewares/activityLogger");
 
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(activityLogger);
 
 // API Routes
 app.use("/api/auth", authRoutes);
@@ -54,6 +60,10 @@ app.use("/api/lesson-progress", lessonProgressRoutes);
 app.use("/api/rooms", roomRoutes);
 app.use("/api/homeworks", homeworkRoutes);
 app.use("/api/staff", staffRoutes);
+app.use("/api/check-ins", checkInRoutes);
+app.use("/api/membership-orders", membershipOrderRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/ai", aiRoutes);
 // Swagger
 app.use(
   "/api-docs",

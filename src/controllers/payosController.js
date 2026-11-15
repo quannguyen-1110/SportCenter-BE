@@ -3,7 +3,9 @@ const mongoose = require("mongoose");
 const Payment = require("../models/Payment");
 const ClassRegistration = require("../models/ClassRegistration");
 const Member = require("../models/Member");
-const { payosClient, reconcilePayosPayment } = require("../services/payosService");
+const MembershipOrder = require("../models/MembershipOrder");
+const { payosClient, reconcilePayosPayment, getOrCreateCheckoutUrl } = require("../services/payosService");
+const { reconcileMembershipOrder } = require("../services/membershipPaymentService");
 
 async function createPayosCheckout(req, res) {
   const fail = (status, message) => res.status(status).json({ success: false, message });
@@ -39,26 +41,7 @@ async function createPayosCheckout(req, res) {
     let paymentUrl = reserved.payosCheckoutUrl;
     if (!paymentUrl) {
       const orderCode = reserved.payosOrderCode;
-      const localReturnUrl = `http://localhost:${process.env.PORT || 5000}/api/payments/payos/return`;
-      try {
-        const link = await client.paymentRequests.create({
-          orderCode,
-          amount: reserved.amount,
-          description: `HP${String(orderCode).slice(-7)}`,
-          returnUrl: process.env.PAYOS_RETURN_URL || localReturnUrl,
-          cancelUrl: process.env.PAYOS_CANCEL_URL || localReturnUrl,
-          expiredAt: Math.floor(Date.now() / 1000) + 3600,
-        });
-        paymentUrl = link.checkoutUrl;
-      } catch (error) {
-        // A timed-out request can leave an order already created at payOS.
-        const link = await client.paymentRequests.get(orderCode);
-        if (link.orderCode !== orderCode || link.amount !== reserved.amount ||
-            !/^[a-f\d]{32}$/i.test(link.id) || !["PENDING", "PROCESSING"].includes(link.status)) {
-          throw error;
-        }
-        paymentUrl = `https://pay.payos.vn/web/${link.id}`;
-      }
+      paymentUrl = await getOrCreateCheckoutUrl(client, orderCode, reserved.amount, "HP" + String(orderCode).slice(-7));
       await Payment.updateOne({ _id: reserved._id, payosOrderCode: orderCode }, { $set: { payosCheckoutUrl: paymentUrl } });
     }
     return res.json({ success: true, data: { paymentUrl } });
@@ -84,7 +67,12 @@ async function payosWebhook(req, res) {
   try {
     // An unknown order can be the signed sample sent when registering the webhook.
     const payment = await Payment.findOne({ payosOrderCode: event.orderCode, status: "PENDING" });
-    if (payment) await reconcilePayosPayment(client, payment, event.paymentLinkId);
+    if (payment) {
+      await reconcilePayosPayment(client, payment, event.paymentLinkId);
+    } else {
+      const order = await MembershipOrder.findOne({ payosOrderCode: event.orderCode, status: "PENDING" });
+      if (order) await reconcileMembershipOrder(client, order, event.paymentLinkId);
+    }
     return res.sendStatus(200);
   } catch (error) {
     console.error("payOS webhook failed:", error.name);

@@ -77,43 +77,51 @@ if (req.user.role === "MEMBER") {
         message: "paymentMethod must be CASH, BANK_TRANSFER or ONLINE",
       });
     }
-// Prevent duplicate pending or successful payments.
-const existingPayment = await Payment.findOne({
-  classRegistrationId: classRegistration._id,
-  status: { $in: ["PENDING", "SUCCESS"] },
-});
+    const result = await mongoose.connection.transaction(async (session) => {
+      // Lock this registration while finding or creating its payable attempt.
+      const registration = await ClassRegistration.findOneAndUpdate(
+        { _id: classRegistration._id, status: "PENDING_PAYMENT" },
+        { $inc: { __v: 1 } },
+        { session, returnDocument: "after", timestamps: false }
+      );
+      if (!registration) return { unavailable: true };
 
-if (existingPayment) {
-  return res.status(409).json({
-    success: false,
-    message: "A pending or successful payment already exists for this registration",
-    data: {
-      paymentId: existingPayment._id,
-      status: existingPayment.status,
-    },
-  });
-}
-    // Use the price saved when the member registered for the class.
-    const amount = classRegistration.priceSnapshot;
+      const existing = await Payment.findOne({
+        classRegistrationId: registration._id,
+        status: { $in: ["PENDING", "SUCCESS"] },
+      }).session(session);
+      if (existing) return { existing };
 
-    if (
-      typeof amount !== "number" ||
-      !Number.isFinite(amount) ||
-      amount <= 0
-    ) {
-      return res.status(400).json({
+      const amount = registration.priceSnapshot;
+      if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+        return { invalidAmount: true };
+      }
+
+      const payment = await new Payment({
+        classRegistrationId: registration._id,
+        amount,
+        paymentMethod,
+        status: "PENDING",
+        paymentDate: null,
+      }).save({ session });
+      return { payment };
+    });
+
+    if (result.unavailable) {
+      return res.status(400).json({ success: false, message: "Class registration is no longer payable" });
+    }
+    if (result.existing) {
+      return res.status(409).json({
         success: false,
-        message: "Registration priceSnapshot must be greater than 0",
+        message: "A pending or successful payment already exists for this registration",
+        data: { paymentId: result.existing._id, status: result.existing.status },
       });
     }
+    if (result.invalidAmount) {
+      return res.status(400).json({ success: false, message: "Registration priceSnapshot must be greater than 0" });
+    }
 
-    const payment = await Payment.create({
-      classRegistrationId: classRegistration._id,
-      amount,
-      paymentMethod,
-      status: "PENDING",
-      paymentDate: null,
-    });
+    const { payment } = result;
 
     return res.status(201).json({
       success: true,

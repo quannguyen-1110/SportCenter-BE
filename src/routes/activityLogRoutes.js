@@ -27,6 +27,7 @@ const router = express.Router();
 router.get(
   "/",
   authMiddleware,
+  roleMiddleware("CENTER_MANAGER"),
   getActivityLogs
 );
 

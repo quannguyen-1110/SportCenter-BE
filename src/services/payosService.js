@@ -37,4 +37,33 @@ async function reconcilePayosPayment(client, payment, expectedLinkId) {
   });
 }
 
-module.exports = { payosClient, reconcilePayosPayment };
+async function getOrCreateCheckoutUrl(client, orderCode, amount, description) {
+  const localReturnUrl = "http://localhost:" + (process.env.PORT || 5000) + "/api/payments/payos/return";
+  let checkoutUrl;
+  try {
+    const link = await client.paymentRequests.create({
+      orderCode,
+      amount,
+      description,
+      returnUrl: process.env.PAYOS_RETURN_URL || localReturnUrl,
+      cancelUrl: process.env.PAYOS_CANCEL_URL || localReturnUrl,
+      expiredAt: Math.floor(Date.now() / 1000) + 3600,
+    });
+    checkoutUrl = link.checkoutUrl;
+  } catch (error) {
+    // A timed-out request can leave an order already created at payOS.
+    const link = await client.paymentRequests.get(orderCode);
+    if (link?.orderCode !== orderCode || link.amount !== amount ||
+        !/^[a-f\d]{32}$/i.test(link.id) || !["PENDING", "PROCESSING"].includes(link.status)) {
+      throw error;
+    }
+    checkoutUrl = "https://pay.payos.vn/web/" + link.id;
+  }
+  const url = new URL(checkoutUrl);
+  if (url.origin !== "https://pay.payos.vn" || url.username || url.password) {
+    throw new Error("Unexpected payOS checkout URL");
+  }
+  return checkoutUrl;
+}
+
+module.exports = { payosClient, reconcilePayosPayment, getOrCreateCheckoutUrl };

@@ -2,6 +2,8 @@
 const express = require("express");
 
 const {
+  sendCoachNotification,
+  markAllMyNotificationsRead,
   createNotification,
   getNotifications,
   getMyNotifications,
@@ -40,6 +42,57 @@ router.get(
   "/my",
   authMiddleware,
   getMyNotifications
+);
+
+/**
+ * @swagger
+ * /api/notifications/my/read-all:
+ *   put:
+ *     summary: Mark all of your notifications as read
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Number of notifications updated
+ */
+router.put(
+  "/my/read-all",
+  authMiddleware,
+  markAllMyNotificationsRead
+);
+
+/**
+ * @swagger
+ * /api/notifications/coach:
+ *   post:
+ *     summary: Coach sends a notification to one of their classes or one student
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title, message]
+ *             properties:
+ *               classId: { type: string, description: Send to all confirmed members of this class }
+ *               memberId: { type: string, description: Send to a single student }
+ *               title: { type: string, example: "Đổi bài tập tuần này" }
+ *               message: { type: string, example: "Cả lớp tập thêm 3 hiệp plank mỗi tối." }
+ *     responses:
+ *       201:
+ *         description: Notification sent
+ *       403:
+ *         description: Class or member is not yours
+ */
+router.post(
+  "/coach",
+  authMiddleware,
+  roleMiddleware("COACH"),
+  sendCoachNotification
 );
 
 /**

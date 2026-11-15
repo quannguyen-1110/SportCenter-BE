@@ -170,7 +170,7 @@ const getClasses = async (req, res) => {
   try {
     const classes = await Class.find()
       .populate("subjectId", "name")
-      .populate("courseId", "name description price status subjectId")
+      .populate("courseId", "name description price pricing status subjectId")
       .populate("coachId", "fullName phone")
       .sort({ createdAt: -1 });
 

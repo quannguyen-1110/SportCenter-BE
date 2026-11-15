@@ -183,6 +183,17 @@ const registerClass = async (req, res) => {
         memberId: targetMember._id,
       });
 
+    if (existingRegistration?.status === "PENDING_PAYMENT" && existingRegistration.priceSnapshot === 0) {
+      const registration = await ClassRegistration.findOneAndUpdate(
+        { _id: existingRegistration._id, status: "PENDING_PAYMENT", priceSnapshot: 0 },
+        { $set: { status: "CONFIRMED" } },
+        { returnDocument: "after" }
+      );
+      if (registration) {
+        return res.json({ success: true, message: "Registration confirmed.", data: registration });
+      }
+    }
+
     if (
       existingRegistration &&
       existingRegistration.status !== "CANCELLED"
@@ -217,7 +228,7 @@ const registerClass = async (req, res) => {
         });
       }
 
-      existingRegistration.status = "PENDING_PAYMENT";
+      existingRegistration.status = priceResult.price === 0 ? "CONFIRMED" : "PENDING_PAYMENT";
       existingRegistration.priceSnapshot = priceResult.price;
       existingRegistration.registeredAt = new Date();
 
@@ -226,7 +237,7 @@ const registerClass = async (req, res) => {
       return res.status(200).json({
         success: true,
         message:
-          "Cancelled registration reactivated. Payment is required to confirm the registration.",
+          priceResult.price === 0 ? "Registration confirmed." : "Cancelled registration reactivated. Payment is required to confirm the registration.",
         data: existingRegistration,
       });
     }
@@ -235,7 +246,7 @@ const registerClass = async (req, res) => {
     const registration = await ClassRegistration.create({
       classId,
       memberId: targetMember._id,
-      status: "PENDING_PAYMENT",
+      status: priceResult.price === 0 ? "CONFIRMED" : "PENDING_PAYMENT",
       priceSnapshot: priceResult.price,
       registeredAt: new Date(),
     });
@@ -243,7 +254,7 @@ const registerClass = async (req, res) => {
     return res.status(201).json({
       success: true,
       message:
-        "Class registration created. Payment is required to confirm the registration.",
+        priceResult.price === 0 ? "Registration confirmed." : "Class registration created. Payment is required to confirm the registration.",
       data: registration,
     });
   } catch (error) {
@@ -266,7 +277,13 @@ const registerClass = async (req, res) => {
 // GET /api/class-registrations
 const getClassRegistrations = async (req, res) => {
   try {
-    const registrations = await ClassRegistration.find()
+    const filter = {};
+    if (req.user.role === "MEMBER") {
+      const member = await Member.findOne({ userId: req.user.userId }).select("_id");
+      if (!member) return res.json({ success: true, data: [] });
+      filter.memberId = member._id;
+    }
+    const registrations = await ClassRegistration.find(filter)
       .populate("memberId", "fullName phone goal level")
       .populate({
         path: "classId",
