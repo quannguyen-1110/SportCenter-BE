@@ -5,6 +5,7 @@ const ClassRegistration = require("../models/ClassRegistration");
 const Class = require("../models/Class");
 const Course = require("../models/Course");
 const Member = require("../models/Member");
+const Notification = require("../models/Notification");
 const Payment = require("../models/Payment");
 
 const VALID_REGISTRATION_STATUSES = [
@@ -561,9 +562,104 @@ const updateClassRegistration = async (req, res) => {
   }
 };
 
+// POST /api/class-registrations/:id/confirm  body: { paymentMethod: "CASH" | "BANK_TRANSFER" }
+// Front desk approval: the receptionist collects the fee at the desk and confirms the registration,
+// which turns on the member's QR entry pass. Recording the payment and confirming happen together;
+// a second click (or a second receptionist) gets the same result instead of a second payment.
+const confirmRegistration = async (req, res) => {
+  const { id } = req.params;
+  const paymentMethod = req.body?.paymentMethod || "CASH";
+
+  if (!isValidId(id)) {
+    return res.status(400).json({ success: false, message: "Invalid class registration ID" });
+  }
+  if (!["CASH", "BANK_TRANSFER"].includes(paymentMethod)) {
+    return res.status(400).json({ success: false, message: "paymentMethod must be CASH or BANK_TRANSFER" });
+  }
+
+  const fail = (status, message) => Object.assign(new Error(message), { status });
+
+  try {
+    const result = await mongoose.connection.transaction(async (session) => {
+      const registration = await ClassRegistration.findById(id).session(session);
+      if (!registration) throw fail(404, "Không tìm thấy đăng ký.");
+      if (registration.status === "CANCELLED") throw fail(409, "Đăng ký đã hủy, không thể xác nhận.");
+      if (registration.status === "CONFIRMED") return { registration, payment: null, alreadyConfirmed: true };
+
+      if (await Payment.exists({ classRegistrationId: registration._id, status: "PENDING", payosOrderCode: { $exists: true } }).session(session)) {
+        throw fail(409, "Hội viên đang có link thanh toán payOS chưa xong. Kiểm tra trạng thái thanh toán trước khi thu tiền tại quầy.");
+      }
+
+      const classData = await Class.findById(registration.classId).session(session);
+      if (!classData) throw fail(404, "Không tìm thấy lớp học của đăng ký.");
+      const capacity = await checkClassCapacity(classData, registration._id);
+      if (!capacity.available) throw fail(409, capacity.message);
+
+      const now = new Date();
+      // Only one confirmation can move the registration out of PENDING_PAYMENT.
+      const confirmed = await ClassRegistration.findOneAndUpdate(
+        { _id: registration._id, status: "PENDING_PAYMENT" },
+        { $set: { status: "CONFIRMED", confirmedBy: req.user.userId, confirmedAt: now } },
+        { session, returnDocument: "after" }
+      );
+      if (!confirmed) return { registration, payment: null, alreadyConfirmed: true };
+
+      const payment = await Payment.findOneAndUpdate(
+        { classRegistrationId: registration._id, status: "PENDING", paymentMethod: { $in: ["CASH", "BANK_TRANSFER"] } },
+        { $set: { status: "SUCCESS", paymentMethod, paymentDate: now } },
+        { session, returnDocument: "after" }
+      ) || (await Payment.create([{
+        classRegistrationId: registration._id,
+        amount: registration.priceSnapshot,
+        paymentMethod,
+        status: "SUCCESS",
+        paymentDate: now,
+      }], { session }))[0];
+
+      return { registration: confirmed, payment, alreadyConfirmed: false, className: classData.name };
+    });
+
+    if (!result.alreadyConfirmed) {
+      try {
+        const member = await Member.findById(result.registration.memberId).select("userId").lean();
+        if (member?.userId) {
+          await Notification.create({
+            userId: member.userId,
+            title: "Đăng ký lớp đã được xác nhận",
+            message: `Lễ tân đã xác nhận đăng ký lớp ${result.className || ""}. Mã QR ra/vào trung tâm đã sẵn sàng trong ứng dụng.`.replace("  ", " "),
+          });
+        }
+      } catch (error) {
+        console.error("Registration confirmed notification error:", error.message);
+      }
+    }
+
+    return res.status(result.alreadyConfirmed ? 200 : 201).json({
+      success: true,
+      message: result.alreadyConfirmed ? "Đăng ký đã được xác nhận trước đó." : "Đã thu tiền và xác nhận đăng ký.",
+      data: {
+        registrationId: result.registration._id,
+        status: "CONFIRMED",
+        alreadyConfirmed: result.alreadyConfirmed,
+        confirmedAt: result.registration.confirmedAt || null,
+        payment: result.payment
+          ? { id: result.payment._id, amount: result.payment.amount, paymentMethod: result.payment.paymentMethod, status: result.payment.status }
+          : null,
+      },
+    });
+  } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ success: false, message: error.message });
+    }
+    console.error("Confirm class registration error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
 module.exports = {
   registerClass,
   getClassRegistrations,
   updateClassRegistration,
   checkClassCapacity,
+  confirmRegistration,
 };

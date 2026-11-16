@@ -5,6 +5,7 @@ const {
   registerClass,
   getClassRegistrations,
   updateClassRegistration,
+  confirmRegistration,
 } = require("../controllers/classRegistrationController");
 
 const authMiddleware = require("../middlewares/authMiddleware");
@@ -150,6 +151,31 @@ router.put(
   authMiddleware,
   roleMiddleware("MEMBER", "RECEPTIONIST", "CENTER_MANAGER"),
   updateClassRegistration
+);
+
+/**
+ * @swagger
+ * /api/class-registrations/{id}/confirm:
+ *   post:
+ *     summary: Front desk collects the fee and confirms the registration (turns on the member's QR pass)
+ *     tags: [Class Registrations]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: id, required: true, schema: { type: string } }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema: { type: object, properties: { paymentMethod: { type: string, enum: [CASH, BANK_TRANSFER] } } }
+ *     responses:
+ *       201: { description: Payment recorded and registration confirmed }
+ *       200: { description: Already confirmed (repeat request) }
+ *       409: { description: Cancelled, or a payOS link is still pending }
+ */
+router.post(
+  "/:id/confirm",
+  authMiddleware,
+  roleMiddleware("RECEPTIONIST", "CENTER_MANAGER"),
+  confirmRegistration
 );
 
 module.exports = router;

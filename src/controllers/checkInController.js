@@ -4,13 +4,25 @@ const QRCode = require("qrcode");
 
 const CheckIn = require("../models/CheckIn");
 const CheckInToken = require("../models/CheckInToken");
+const ClassRegistration = require("../models/ClassRegistration");
 const Member = require("../models/Member");
 const Membership = require("../models/Membership");
 const MembershipPlan = require("../models/MembershipPlan");
 const MembershipOrder = require("../models/MembershipOrder");
+const Schedule = require("../models/Schedule");
 const User = require("../models/User");
+const {
+  CHECKIN_ERRORS,
+  CheckInError,
+  accessState,
+  isRegistrationActive,
+  isTokenFormat,
+  registrationLabel,
+  vietnamDay,
+} = require("../utils/checkInRules");
 
-const tokenLifetimeMs = 60_000;
+// Long enough for the front desk to scan, check the details and press confirm.
+const tokenLifetimeMs = 120_000;
 const millisecondsPerDay = 86_400_000;
 
 function hashToken(token) {
@@ -157,74 +169,272 @@ async function activateMembership(req, res) {
   return res.status(201).json({ success: true, data });
 }
 
-async function issueToken(req, res) {
-  const member = await Member.findOne({ userId: req.user.userId }).lean();
-  if (!member) {
-    return res.status(404).json({ success: false, message: "Member profile not found" });
-  }
-  if (!await User.exists({ _id: req.user.userId, role: "MEMBER", status: "ACTIVE" })) {
-    return res.status(403).json({ success: false, message: "Member account is inactive" });
-  }
+/**
+ * Everything that decides whether a member may come in or go out right now:
+ * class registrations (with whether each is still running), an active membership, the open visit.
+ */
+async function loadAccess(member, now, session = null) {
+  const queries = [
+    () => ClassRegistration.find({ memberId: member._id, status: { $in: ["PENDING_PAYMENT", "CONFIRMED"] } })
+      .populate({
+        path: "classId",
+        select: "name subjectId courseId",
+        populate: [{ path: "subjectId", select: "name" }, { path: "courseId", select: "name" }],
+      })
+      .session(session)
+      .lean(),
+    () => findActiveMembership(member._id, now).session(session).lean(),
+    () => CheckIn.findOne({ memberId: member._id, status: "OPEN" }).session(session).lean(),
+    () => User.findById(member.userId).select("role status").session(session).lean(),
+  ];
+  // Operations inside a transaction must not run in parallel on its session.
+  const results = [];
+  if (session) for (const query of queries) results.push(await query());
+  const [registrations, membership, openVisit, user] = session ? results : await Promise.all(queries.map((query) => query()));
 
-  const now = new Date();
-  const membership = await findActiveMembership(member._id, now).lean();
-  if (!membership) {
-    return res.status(403).json({ success: false, message: "An active membership is required" });
-  }
+  const confirmedClassIds = registrations
+    .filter((item) => item.status === "CONFIRMED" && item.classId)
+    .map((item) => item.classId._id);
+  const lastSessions = confirmedClassIds.length
+    ? await Schedule.aggregate([
+      { $match: { classId: { $in: confirmedClassIds }, status: { $ne: "CANCELLED" } } },
+      { $group: { _id: "$classId", last: { $max: "$date" } } },
+    ]).session(session)
+    : [];
+  const lastDayByClass = new Map(lastSessions.map((row) => [String(row._id), vietnamDay(row.last)]));
+  const today = vietnamDay(now);
 
-  const token = randomBytes(32).toString("base64url");
-  const expiresAt = new Date(Math.min(now.getTime() + tokenLifetimeMs, membership.expiresAt.getTime()));
-  const qrImage = await QRCode.toDataURL(token);
-  await CheckInToken.create({ tokenHash: hashToken(token), memberId: member._id, expiresAt });
-
-  res.set("Cache-Control", "no-store");
-  return res.status(201).json({ success: true, data: { qrImage, expiresAt } });
-}
-
-async function confirmCheckIn(req, res) {
-  const { token } = req.body ?? {};
-  if (typeof token !== "string" || !/^[a-z\d_-]{43}$/i.test(token)) {
-    return res.status(400).json({ success: false, message: "Invalid QR token format" });
-  }
-
-  const checkIn = await mongoose.connection.transaction(async (session) => {
-    const now = new Date();
-    const claimed = await CheckInToken.findOneAndUpdate(
-      { tokenHash: hashToken(token), usedAt: null, expiresAt: { $gt: now } },
-      { $set: { usedAt: now } },
-      { session }
-    );
-    if (!claimed) {
-      return null;
-    }
-
-    const member = await Member.findById(claimed.memberId).session(session).lean();
-    const activeUser = member && await User.exists({
-      _id: member.userId,
-      role: "MEMBER",
-      status: "ACTIVE",
-    }).session(session);
-    const membership = activeUser && await findActiveMembership(member._id, now).session(session);
-    if (!membership) {
-      const error = new Error("An active member account and membership are required");
-      error.status = 403;
-      throw error;
-    }
-
-    const record = await new CheckIn({
-      memberId: member._id,
-      membershipId: membership._id,
-      checkedInBy: req.user.userId,
-      checkedInAt: now,
-    }).save({ session });
-
-    return { ...record.toObject(), memberName: member.fullName };
+  const items = registrations.map((item) => {
+    const lastSessionDay = lastDayByClass.get(String(item.classId?._id)) || null;
+    const active = isRegistrationActive(item, lastSessionDay, today);
+    return {
+      id: item._id,
+      classId: item.classId?._id || null,
+      className: item.classId?.name || "",
+      subjectName: item.classId?.subjectId?.name || "",
+      courseName: item.classId?.courseId?.name || "",
+      status: item.status,
+      label: registrationLabel(item.status, active),
+      active,
+      lastSessionDay,
+    };
+  });
+  const activeItems = items.filter((item) => item.active);
+  const state = accessState({
+    accountActive: user?.role === "MEMBER" && user?.status === "ACTIVE",
+    activeRegistrations: activeItems.length,
+    pendingRegistrations: items.filter((item) => item.status === "PENDING_PAYMENT").length,
+    hasMembership: Boolean(membership),
+    openVisit,
   });
 
-  if (!checkIn) {
-    return res.status(409).json({ success: false, message: "QR code is invalid, expired or already used" });
+  return {
+    registrations: items,
+    activeRegistrationIds: activeItems.map((item) => item.id),
+    membership: membership ? { id: membership._id, expiresAt: membership.expiresAt } : null,
+    openVisit: openVisit ? { id: openVisit._id, checkedInAt: openVisit.checkedInAt } : null,
+    ...state,
+    message: state.code ? CHECKIN_ERRORS[state.code].message : "",
+  };
+}
+
+async function memberOfUser(userId) {
+  const member = await Member.findOne({ userId }).select("fullName phone userId").lean();
+  if (!member) {
+    const error = new Error("Member profile not found");
+    error.status = 404;
+    throw error;
   }
-  return res.status(201).json({ success: true, data: checkIn });
+  return member;
+}
+
+// GET /api/check-ins/me - the member's registrations, whether a QR can be issued, and the open visit.
+async function getMyAccess(req, res) {
+  const member = await memberOfUser(req.user.userId);
+  const access = await loadAccess(member, new Date());
+  res.set("Cache-Control", "no-store");
+  return res.json({ success: true, data: { member: { id: member._id, fullName: member.fullName }, ...access } });
+}
+
+// POST /api/check-ins/tokens - a fresh single-use QR for the member's own entry or exit.
+// The QR holds only a random token; the server keeps its hash. Earlier unused codes stop working.
+async function issueToken(req, res) {
+  const member = await memberOfUser(req.user.userId);
+  const now = new Date();
+  const access = await loadAccess(member, now);
+  if (!access.allowed) throw new CheckInError(access.code);
+
+  await CheckInToken.updateMany(
+    { memberId: member._id, usedAt: null, expiresAt: { $gt: now } },
+    { $set: { expiresAt: now } }
+  );
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(now.getTime() + tokenLifetimeMs);
+  await CheckInToken.create({ tokenHash: hashToken(token), memberId: member._id, expiresAt });
+  const qrImage = await QRCode.toDataURL(token, { margin: 1, width: 320 });
+
+  res.set("Cache-Control", "no-store");
+  return res.status(201).json({ success: true, data: { qrImage, expiresAt, nextAction: access.nextAction } });
+}
+
+/** The stored token for a scanned code, or the reason it cannot be used. */
+async function findUsableToken(token, now) {
+  if (!isTokenFormat(token)) throw new CheckInError("TOKEN_INVALID");
+  const record = await CheckInToken.findOne({ tokenHash: hashToken(token) }).lean();
+  if (!record) throw new CheckInError("TOKEN_INVALID");
+  if (record.usedAt) throw new CheckInError("TOKEN_USED");
+  if (record.expiresAt <= now) throw new CheckInError("TOKEN_EXPIRED");
+  return record;
+}
+
+// POST /api/check-ins/preview { token } - front desk scan: who it is and what to confirm.
+// Reading a code does not use it up and records nothing.
+async function previewToken(req, res) {
+  const now = new Date();
+  const record = await findUsableToken(req.body?.token, now);
+  const member = await Member.findById(record.memberId).select("fullName phone userId").lean();
+  if (!member) throw new CheckInError("TOKEN_INVALID");
+  const access = await loadAccess(member, now);
+
+  res.set("Cache-Control", "no-store");
+  return res.json({
+    success: true,
+    data: {
+      member: { id: member._id, fullName: member.fullName, phone: member.phone || "" },
+      tokenExpiresAt: record.expiresAt,
+      ...access,
+    },
+  });
+}
+
+/** A visit as the clients see it. */
+function visitView(visit, member) {
+  return {
+    id: visit._id,
+    status: visit.status,
+    checkedInAt: visit.checkedInAt,
+    checkedOutAt: visit.checkedOutAt,
+    member: member ? { id: member._id, fullName: member.fullName } : undefined,
+  };
+}
+
+// POST /api/check-ins/confirm { token, action: "IN" | "OUT" } - the front desk confirms entry or exit.
+// Using the token and writing the visit happen in one transaction: a code counts once, a member
+// has at most one open visit, and a retried or double-clicked request returns the first result.
+async function confirmVisit(req, res) {
+  const { token, action } = req.body ?? {};
+  if (!["IN", "OUT"].includes(action)) {
+    return res.status(400).json({ success: false, message: "action must be IN or OUT" });
+  }
+  if (!isTokenFormat(token)) throw new CheckInError("TOKEN_INVALID");
+  const tokenHash = hashToken(token);
+
+  let result;
+  try {
+    result = await mongoose.connection.transaction(async (session) => {
+      const now = new Date();
+      const claimed = await CheckInToken.findOneAndUpdate(
+        { tokenHash, usedAt: null, expiresAt: { $gt: now } },
+        { $set: { usedAt: now } },
+        { session, returnDocument: "after" }
+      );
+      if (!claimed) return null;
+
+      const member = await Member.findById(claimed.memberId).select("fullName userId").session(session).lean();
+      if (!member) throw new CheckInError("TOKEN_INVALID");
+
+      if (action === "OUT") {
+        // Closing an open visit is always allowed, even if the registration ended meanwhile.
+        const visit = await CheckIn.findOneAndUpdate(
+          { memberId: member._id, status: "OPEN" },
+          { $set: { status: "CLOSED", checkedOutAt: now, checkedOutBy: req.user.userId, checkOutTokenId: claimed._id } },
+          { session, returnDocument: "after" }
+        );
+        if (!visit) throw new CheckInError("NOT_INSIDE");
+        return { visit, member };
+      }
+
+      const access = await loadAccess(member, now, session);
+      if (access.openVisit) throw new CheckInError("ALREADY_INSIDE");
+      if (!access.allowed) throw new CheckInError(access.code);
+      const [visit] = await CheckIn.create([{
+        memberId: member._id,
+        classRegistrationIds: access.activeRegistrationIds,
+        membershipId: access.membership?.id || null,
+        status: "OPEN",
+        checkedInBy: req.user.userId,
+        checkedInAt: now,
+        checkInTokenId: claimed._id,
+      }], { session });
+      return { visit, member };
+    });
+  } catch (error) {
+    // Another code for the same member was confirmed at the same moment.
+    if (error.code === 11000 && error.keyPattern?.memberId) throw new CheckInError("ALREADY_INSIDE");
+    throw error;
+  }
+
+  if (result) {
+    return res.status(201).json({
+      success: true,
+      message: action === "IN" ? "Đã xác nhận vào trung tâm." : "Đã xác nhận ra khỏi trung tâm.",
+      data: { action, alreadyRecorded: false, visit: visitView(result.visit, result.member) },
+    });
+  }
+
+  // The token could not be claimed: a repeat of a request that already went through, or a bad code.
+  const record = await CheckInToken.findOne({ tokenHash }).lean();
+  if (record?.usedAt) {
+    const field = action === "IN" ? "checkInTokenId" : "checkOutTokenId";
+    const visit = await CheckIn.findOne({ [field]: record._id }).populate("memberId", "fullName").lean();
+    if (visit) {
+      return res.json({
+        success: true,
+        message: "Thao tác này đã được ghi nhận trước đó.",
+        data: { action, alreadyRecorded: true, visit: visitView(visit, visit.memberId) },
+      });
+    }
+    throw new CheckInError("TOKEN_USED");
+  }
+  throw new CheckInError(record ? "TOKEN_EXPIRED" : "TOKEN_INVALID");
+}
+
+// POST /api/check-ins - older one-step entry, kept for existing clients: same as confirm with IN.
+async function confirmCheckIn(req, res) {
+  req.body = { ...(req.body ?? {}), action: "IN" };
+  return confirmVisit(req, res);
+}
+
+const visitPopulate = [
+  { path: "memberId", select: "fullName phone" },
+  { path: "checkedInBy", select: "email role" },
+  { path: "checkedOutBy", select: "email role" },
+  { path: "classRegistrationIds", select: "classId", populate: { path: "classId", select: "name" } },
+];
+
+// GET /api/check-ins/visits?date=YYYY-MM-DD - front desk log for a day (Vietnam time),
+// plus anyone still inside from earlier days.
+async function listVisits(req, res) {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || "")) ? req.query.date : vietnamDay();
+  const start = new Date(`${day}T00:00:00+07:00`);
+  const end = new Date(start.getTime() + millisecondsPerDay);
+  const data = await CheckIn.find({ $or: [{ checkedInAt: { $gte: start, $lt: end } }, { status: "OPEN" }] })
+    .populate(visitPopulate)
+    .sort({ checkedInAt: -1 })
+    .limit(300)
+    .lean();
+  return res.json({ success: true, data: { date: day, visits: data } });
+}
+
+// GET /api/check-ins/visits/me - the member's own visits, newest first.
+async function listMyVisits(req, res) {
+  const member = await memberOfUser(req.user.userId);
+  const data = await CheckIn.find({ memberId: member._id })
+    .populate(visitPopulate.slice(3))
+    .sort({ checkedInAt: -1 })
+    .limit(30)
+    .lean();
+  return res.json({ success: true, data });
 }
 
 async function listMyMemberships(req, res) {
@@ -252,4 +462,10 @@ module.exports = {
   issueToken,
   confirmCheckIn,
   listMyMemberships,
+  getMyAccess,
+  previewToken,
+  confirmVisit,
+  listVisits,
+  listMyVisits,
+  loadAccess,
 };

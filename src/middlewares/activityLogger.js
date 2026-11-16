@@ -30,7 +30,8 @@ const resources = {
 const verbs = { POST: "Tạo", PUT: "Cập nhật", PATCH: "Cập nhật", DELETE: "Xóa" };
 
 // Paths that are high-volume or not user actions; they are never logged.
-const skipped = [/^\/api\/payments\/payos\//, /^\/api\/payments\/vnpay/, /^\/api\/auth\/(login|google)/, /^\/api\/ai\/chat/];
+// QR preview only reads, and members ask for fresh QR codes often; confirmations are still logged.
+const skipped = [/^\/api\/payments\/payos\//, /^\/api\/payments\/vnpay/, /^\/api\/auth\/(login|google)/, /^\/api\/ai\/chat/, /^\/api\/check-ins\/(preview|tokens)$/];
 
 function describe(method, path) {
   const resource = path.split("/")[2] ?? "";

@@ -32,6 +32,18 @@ const classRegistrationSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+
+    // Front desk approval (payment collected at the desk); null for online/free confirmations.
+    confirmedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    confirmedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

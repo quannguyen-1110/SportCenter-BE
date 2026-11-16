@@ -2,6 +2,7 @@ const express = require("express");
 
 const authenticate = require("../middlewares/authMiddleware");
 const allow = require("../middlewares/roleMiddleware");
+const { CHECKIN_ERRORS } = require("../utils/checkInRules");
 const {
   listPlans,
   createPlan,
@@ -12,6 +13,11 @@ const {
   issueToken,
   confirmCheckIn,
   listMyMemberships,
+  getMyAccess,
+  previewToken,
+  confirmVisit,
+  listVisits,
+  listMyVisits,
 } = require("../controllers/checkInController");
 
 const router = express.Router();
@@ -196,8 +202,63 @@ router.post("/tokens", allow("MEMBER"), issueToken);
  */
 router.post("/", allow("CENTER_MANAGER", "RECEPTIONIST"), confirmCheckIn);
 
+/**
+ * @swagger
+ * /api/check-ins/me:
+ *   get:
+ *     summary: Member - registrations, whether a QR can be issued, and the open visit
+ *     tags: [Check-in]
+ *     security: [{ bearerAuth: [] }]
+ * /api/check-ins/preview:
+ *   post:
+ *     summary: Front desk - look up a scanned QR without using it (who, classes, IN or OUT)
+ *     tags: [Check-in]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema: { type: object, required: [token], properties: { token: { type: string } } }
+ * /api/check-ins/confirm:
+ *   post:
+ *     summary: Front desk - confirm entry (IN) or exit (OUT); the QR token is used once
+ *     tags: [Check-in]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token, action]
+ *             properties: { token: { type: string }, action: { type: string, enum: [IN, OUT] } }
+ * /api/check-ins/visits:
+ *   get:
+ *     summary: Front desk - visits of a day (Vietnam time) plus members still inside
+ *     tags: [Check-in]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: query, name: date, schema: { type: string, example: "2026-11-16" } }
+ * /api/check-ins/visits/me:
+ *   get:
+ *     summary: Member - own visits with entry and exit times
+ *     tags: [Check-in]
+ *     security: [{ bearerAuth: [] }]
+ */
+router.get("/me", allow("MEMBER"), getMyAccess);
+router.post("/preview", allow("CENTER_MANAGER", "RECEPTIONIST"), previewToken);
+router.post("/confirm", allow("CENTER_MANAGER", "RECEPTIONIST"), confirmVisit);
+router.get("/visits/me", allow("MEMBER"), listMyVisits);
+router.get("/visits", allow("CENTER_MANAGER", "RECEPTIONIST"), listVisits);
+
 router.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
+  if (typeof error.code === "string" && CHECKIN_ERRORS[error.code]) {
+    return res.status(error.status).json({ success: false, code: error.code, message: error.message });
+  }
+  if (error.status === 404) {
+    return res.status(404).json({ success: false, message: error.message });
+  }
   if (error.code === 11000 && error.keyPattern?.code) {
     return res.status(409).json({ success: false, message: "Plan code already exists" });
   }
