@@ -25,13 +25,17 @@ const authMiddleware = async (req, res, next) => {
   }
 
   try {
-    const user = await User.findById(decoded.userId).select("role status").lean();
+    const user = await User.findById(decoded.userId).select("role status +sessionVersion").lean();
 
     if (!user) {
       return res.status(401).json({
         success: false,
         message: "Account no longer exists",
       });
+    }
+
+    if ((decoded.sessionVersion ?? 0) !== (user.sessionVersion ?? 0)) {
+      return res.status(401).json({ success: false, message: "Session expired" });
     }
 
     if (user.status !== "ACTIVE") {

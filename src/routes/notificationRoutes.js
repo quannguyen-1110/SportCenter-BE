@@ -100,9 +100,15 @@ router.post(
  * /api/notifications:
  *   get:
  *     summary: Get all notifications (management only)
+ *     description: Each notification has sentBy (the sender account, populated with email and role) or null when it was sent automatically.
  *     tags: [Notifications]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: sentBy
+ *         schema: { type: string, enum: [me, system] }
+ *         description: "me = only notifications the signed-in user sent; system = automatic ones; omitted = all"
  *     responses:
  *       200:
  *         description: Notifications retrieved successfully

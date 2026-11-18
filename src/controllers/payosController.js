@@ -16,11 +16,11 @@ async function createPayosCheckout(req, res) {
     if (!client) return fail(503, "BE chưa có đủ khóa cấu hình payOS.");
     const [payment, member] = await Promise.all([
       Payment.findById(req.params.id),
-      Member.findOne({ userId: req.user.userId }),
+      req.user.role === "MEMBER" ? Member.findOne({ userId: req.user.userId }) : null,
     ]);
-    if (!payment || !member) return fail(404, "Không tìm thấy yêu cầu thanh toán.");
+    if (!payment) return fail(404, "Không tìm thấy yêu cầu thanh toán.");
     const registration = await ClassRegistration.findById(payment.classRegistrationId);
-    if (!registration || !registration.memberId.equals(member._id)) {
+    if (!registration || (req.user.role !== "RECEPTIONIST" && !registration.memberId.equals(member?._id))) {
       return fail(404, "Không tìm thấy yêu cầu thanh toán.");
     }
     if (payment.status !== "PENDING" || payment.paymentMethod !== "ONLINE" ||

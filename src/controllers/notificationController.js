@@ -7,6 +7,7 @@ const ClassRegistration = require("../models/ClassRegistration");
 const Coach = require("../models/Coach");
 const Member = require("../models/Member");
 const { notifyUsers, classMemberUserIds } = require("../services/notificationService");
+const { notificationFilter } = require("../utils/notificationQuery");
 
 // ==========================================
 // CREATE NOTIFICATION
@@ -57,6 +58,7 @@ const createNotification = async (req, res) => {
       userId,
       title: title.trim(),
       message: message.trim(),
+      sentBy: req.user.userId,
     });
 
     return res.status(201).json({
@@ -89,8 +91,10 @@ const createNotification = async (req, res) => {
 // ==========================================
 const getNotifications = async (req, res) => {
   try {
-    const notifications = await Notification.find()
+    // ?sentBy=me → only what the signed-in user sent; otherwise every notification of the center.
+    const notifications = await Notification.find(notificationFilter(req.query, req.user.userId))
       .populate("userId", "email role status")
+      .populate("sentBy", "email role")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -252,7 +256,7 @@ const sendCoachNotification = async (req, res) => {
       userIds = [member.userId];
     }
 
-    const sent = await notifyUsers(userIds, title.trim(), `${message.trim()}\n— HLV ${coach.fullName}`);
+    const sent = await notifyUsers(userIds, title.trim(), `${message.trim()}\n— HLV ${coach.fullName}`, req.user.userId);
 
     return res.status(201).json({ success: true, message: "Notification sent", data: { recipients: sent } });
   } catch (error) {

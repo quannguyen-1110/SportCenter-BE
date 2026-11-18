@@ -11,83 +11,11 @@ const googleClient = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID
 );
 
-const register = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    if (
-      typeof email !== "string" ||
-      !email.trim() ||
-      typeof password !== "string" ||
-      !password
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Email and password are required",
-      });
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: "Password must be at least 6 characters",
-      });
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-
-    const existingUser = await User.findOne({
-      email: normalizedEmail,
-    });
-
-    if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        message: "Email already exists",
-      });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    const user = await User.create({
-      email: normalizedEmail,
-      passwordHash,
-      role: "MEMBER",
-      authProvider: "LOCAL",
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: "User registered successfully",
-      data: {
-        id: user._id,
-        email: user.email,
-        role: user.role,
-        status: user.status,
-      },
-    });
-  } catch (error) {
-    console.error("Register error:", error);
-
-    if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message: "Email already exists",
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
-  }
-};
-
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (typeof email !== "string" || !email.trim() || typeof password !== "string" || !password) {
       return res.status(400).json({
         success: false,
         message: "Email and password are required",
@@ -96,9 +24,9 @@ const login = async (req, res) => {
 
     const user = await User.findOne({
   email: email.toLowerCase().trim(),
-}).select("+passwordHash");
+}).select("+passwordHash +sessionVersion");
 
-    if (!user) {
+    if (!user?.passwordHash) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
@@ -128,10 +56,11 @@ const login = async (req, res) => {
       {
         userId: user._id,
         role: user.role,
+        sessionVersion: user.sessionVersion ?? 0,
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: process.env.JWT_EXPIRES_IN,
+        expiresIn: process.env.JWT_EXPIRES_IN || "7d",
       }
     );
 
@@ -444,7 +373,6 @@ const getMe = async (req, res) => {
 };
 
 module.exports = {
-  register,
   login,
   googleLogin,
   verifyGoogleOTP,

@@ -6,11 +6,12 @@ const Notification = require("../models/Notification");
 
 // Creates one notification per distinct user id. Never throws: a failed
 // notification must not fail the business action that triggered it.
-async function notifyUsers(userIds, title, message) {
+// sentBy: the user id of the person who sent it (null for automatic notifications).
+async function notifyUsers(userIds, title, message, sentBy = null) {
   const unique = [...new Set(userIds.filter(Boolean).map(String))];
   if (!unique.length) return 0;
   try {
-    await Notification.insertMany(unique.map((userId) => ({ userId, title, message })), { ordered: false });
+    await Notification.insertMany(unique.map((userId) => ({ userId, title, message, sentBy })), { ordered: false });
     return unique.length;
   } catch (error) {
     console.error("Notification error:", error.message);

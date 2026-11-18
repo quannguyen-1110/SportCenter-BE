@@ -24,7 +24,10 @@ router.post("/payos/webhook", payosWebhook);
 router.get("/payos/return", (_req, res) => {
   res.type("text").send("Quay lại ActiveHub và bấm Kiểm tra trạng thái mới nhất.");
 });
-router.post("/:id/checkout", authMiddleware, roleMiddleware("MEMBER"), (req, res) =>
+router.post("/:id/checkout", authMiddleware, (req, res, next) => {
+  const roles = process.env.PAYMENT_MODE === "payos" ? ["MEMBER", "RECEPTIONIST"] : ["MEMBER"];
+  return roleMiddleware(...roles)(req, res, next);
+}, (req, res) =>
   process.env.PAYMENT_MODE === "payos" ? createPayosCheckout(req, res) : createVnpayPaymentUrl(req, res)
 );
 
