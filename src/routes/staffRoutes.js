@@ -143,4 +143,6 @@ router.get("/accounts", authMiddleware, roleMiddleware("CENTER_MANAGER"), listAc
  */
 router.patch("/accounts/:id", authMiddleware, roleMiddleware("CENTER_MANAGER"), updateAccountAccess);
 
+router.put("/accounts/:id", authMiddleware, roleMiddleware("CENTER_MANAGER"), require("../controllers/staffController").updateStaffAccount);
+
 module.exports = router;

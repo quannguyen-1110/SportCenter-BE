@@ -6,6 +6,7 @@ const Coach = require("../models/Coach");
 const Class = require("../models/Class");
 const Member = require("../models/Member");
 const ClassRegistration = require("../models/ClassRegistration");
+const { coachCanAccessMember } = require("../services/coachAccess");
 
 // ==========================================
 // CREATE HOMEWORK + SEND NOTIFICATIONS
@@ -152,23 +153,7 @@ const createHomework = async (req, res) => {
       }
 
       // Find the class managed by this coach.
-      const coachClass = await Class.findOne({
-        coachId: coach._id,
-      });
-
-      if (!coachClass) {
-        return res.status(403).json({
-          success: false,
-          message: "You are not assigned to a class.",
-        });
-      }
-
-      // The member must have a confirmed registration in this class.
-      const registration = await ClassRegistration.findOne({
-        classId: coachClass._id,
-        memberId: member._id,
-        status: "CONFIRMED",
-      });
+      const registration = await coachCanAccessMember(coach._id, member._id);
 
       if (!registration) {
         return res.status(403).json({
@@ -189,7 +174,7 @@ const createHomework = async (req, res) => {
     }
 
     // 6. Create homework
-    const homework = await Homework.create({
+    const homework = new Homework({
       coachId: coach._id,
       classId: hasClassId ? classId : null,
       memberId: hasMemberId ? memberId : null,
@@ -210,9 +195,13 @@ const createHomework = async (req, res) => {
       message: `Huấn luyện viên đã giao bài tập "${title.trim()}".${dueDateText}`,
     }));
 
-    if (notificationDocs.length > 0) {
-      await Notification.insertMany(notificationDocs);
-    }
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await homework.save({ session });
+        if (notificationDocs.length > 0) await Notification.insertMany(notificationDocs, { session });
+      });
+    } finally { await session.endSession(); }
 
     return res.status(201).json({
       success: true,
@@ -257,7 +246,7 @@ const getMyHomeworks = async (req, res) => {
       homeworks = await Homework.find({
         coachId: coach._id,
         status: "ACTIVE",
-      }).sort({ createdAt: -1 });
+      }).populate("classId", "name").populate("memberId", "fullName").sort({ createdAt: -1 });
     }
 
     // Member xem bài tập cá nhân và bài tập của lớp đã xác nhận.

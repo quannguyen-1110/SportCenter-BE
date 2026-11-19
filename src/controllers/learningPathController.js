@@ -1,5 +1,7 @@
 
+const mongoose = require("mongoose");
 const LearningPath = require("../models/LearningPath");
+const Class = require("../models/Class");
 const Course = require("../models/Course");
 const Lesson = require("../models/Lesson");
 
@@ -117,6 +119,9 @@ const updateLearningPath = async (req, res) => {
     }
 
     if (courseId !== undefined) {
+      if (String(courseId) !== String(learningPath.courseId) && await Lesson.exists({ learningPathId: id })) {
+        return res.status(409).json({ success: false, message: "Cannot change the course of a learning path that has lessons" });
+      }
       const course = await Course.findById(courseId);
 
       if (!course) {
@@ -219,7 +224,43 @@ const deleteLearningPath = async (req, res) => {
   }
 };
 
+// Copy a course curriculum once. The class owns its copies; subsequent template edits do not change them.
+const applyLearningPath = async (req, res) => {
+  const { id } = req.params;
+  const { classId, expectedLessons } = req.body;
+  if (!mongoose.isValidObjectId(id) || !mongoose.isValidObjectId(classId) || !Array.isArray(expectedLessons)) {
+    return res.status(400).json({ success: false, message: "Valid learning path, classId and expectedLessons are required" });
+  }
+  const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
+  try {
+    const lessons = await mongoose.connection.transaction(async session => {
+      const classData = await Class.findById(classId).session(session);
+      const path = await LearningPath.findById(id).session(session);
+      if (!classData || !path) fail(404, "Class or learning path not found");
+      if (String(classData.courseId) !== String(path.courseId)) fail(400, "The learning path does not belong to the class course");
+      // Serializes competing initializations of this class inside the transaction.
+      await Class.updateOne({ _id: classId }, { $inc: { __v: 1 } }, { session });
+      if (await Lesson.exists({ classId }).session(session)) fail(409, "Class already has lessons; refresh the schedule preview");
+      const templates = await Lesson.find({ learningPathId: id, classId: null }).sort({ order: 1 }).session(session);
+      if (!templates.length || templates.some(lesson => !lesson.title?.trim() || !lesson.description?.trim())) {
+        fail(400, "The learning path needs complete template lessons before scheduling");
+      }
+      const actual = templates.map(lesson => ({ id: String(lesson._id), title: lesson.title, description: lesson.description, order: lesson.order }));
+      const expected = expectedLessons.map(lesson => ({ id: lesson?.id, title: lesson?.title, description: lesson?.description, order: lesson?.order }));
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) fail(409, "Template lessons changed; refresh the schedule preview");
+      if (new Set(templates.map(lesson => lesson.order)).size !== templates.length) fail(409, "Template lesson orders must be unique");
+      return Lesson.insertMany(templates.map(lesson => ({ classId, learningPathId: id,
+        title: lesson.title, description: lesson.description, order: lesson.order })), { session });
+    });
+    return res.status(201).json({ success: true, message: "Learning path applied successfully", data: lessons });
+  } catch (error) {
+    if (!error.status) console.error("Apply learning path error:", error);
+    return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Internal server error" });
+  }
+};
+
 module.exports = {
+  applyLearningPath,
   createLearningPath,
   getLearningPaths,
   updateLearningPath,

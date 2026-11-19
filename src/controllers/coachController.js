@@ -2,45 +2,29 @@
 const mongoose = require("mongoose");
 
 const Coach = require("../models/Coach");
+const { hasDeletionDependencies } = require("../services/deletionDependencies");
 const User = require("../models/User");
 const Subject = require("../models/Subject");
 const Class = require("../models/Class");
 const ClassRegistration = require("../models/ClassRegistration");
-
+const { validateSubjectIds, coachCanTeach } = require("../models/coachSubjects");
 // CREATE coach
 const createCoach = async (req, res) => {
   try {
-    const { userId, fullName, phone, subjectId } = req.body;
+    const { userId, fullName, phone, subjectIds } = req.body;
 
-    // Validate required fields
-    if (
-      !userId ||
-      !fullName ||
-      !phone ||
-      !subjectId ||
-      typeof fullName !== "string" ||
-      typeof phone !== "string" ||
-      !fullName.trim() ||
-      !phone.trim()
-    ) {
+    if (typeof userId !== "string" || !mongoose.isValidObjectId(userId) ||
+        typeof fullName !== "string" || !fullName.trim() || typeof phone !== "string" || !phone.trim()) {
       return res.status(400).json({
         success: false,
-        message: "userId, fullName, phone and subjectId are required",
+        message: "Valid userId, fullName, phone and subjectIds are required",
       });
     }
 
-    // Validate ObjectIds
-    if (
-      !mongoose.isValidObjectId(userId) ||
-      !mongoose.isValidObjectId(subjectId)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid userId or subjectId",
-      });
-    }
+    if (req.body.subjectId !== undefined) return res.status(400).json({ success: false, message: "Use subjectIds as an array containing exactly one subject ID" });
+    const qualification = await validateSubjectIds(subjectIds);
+    if (!qualification.valid) return res.status(qualification.status).json({ success: false, message: qualification.message });
 
-    // Check User
     const user = await User.findById(userId);
 
     if (!user) {
@@ -54,16 +38,6 @@ const createCoach = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "User role must be COACH",
-      });
-    }
-
-    // Check Subject
-    const subject = await Subject.findById(subjectId);
-
-    if (!subject) {
-      return res.status(404).json({
-        success: false,
-        message: "Subject not found",
       });
     }
 
@@ -82,15 +56,20 @@ const createCoach = async (req, res) => {
       userId,
       fullName: fullName.trim(),
       phone: phone.trim(),
-      subjectId,
+      subjectIds: qualification.subjectIds,
     });
 
-    await coach.populate("subjectId");
 
     return res.status(201).json({
       success: true,
       message: "Coach created successfully",
-      data: coach,
+      data: {
+        id: coach._id,
+        userId: coach.userId,
+        fullName: coach.fullName,
+        phone: coach.phone,
+        subjectIds: coach.subjectIds,
+      },
     });
   } catch (error) {
     console.error("Create coach error:", error);
@@ -108,30 +87,18 @@ const getCoaches = async (req, res) => {
     const { subjectId } = req.query;
     const filter = {};
 
-    // Filter coaches by Subject
-    if (subjectId) {
-      if (!mongoose.isValidObjectId(subjectId)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid subjectId",
-        });
+    if (subjectId !== undefined) {
+      if (typeof subjectId !== "string" || !mongoose.isValidObjectId(subjectId)) {
+        return res.status(400).json({ success: false, message: "Invalid subjectId" });
       }
-
-      const subject = await Subject.findById(subjectId);
-
-      if (!subject) {
-        return res.status(404).json({
-          success: false,
-          message: "Subject not found",
-        });
+      if (!await Subject.findById(subjectId)) {
+        return res.status(404).json({ success: false, message: "Subject not found" });
       }
-
-      filter.subjectId = subjectId;
+      filter.subjectIds = subjectId;
     }
 
     const coaches = await Coach.find(filter)
-      .select("_id userId fullName phone subjectId createdAt updatedAt")
-      .populate("subjectId")
+      .select("_id userId fullName phone subjectIds createdAt updatedAt")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -153,25 +120,19 @@ const getCoaches = async (req, res) => {
 const updateCoach = async (req, res) => {
   try {
     const { id } = req.params;
-    const { fullName, phone, subjectId } = req.body;
+    const { fullName, phone, subjectIds } = req.body;
 
-    if (!mongoose.isValidObjectId(id)) {
+    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ success: false, message: "Invalid coach ID" });
+    if (req.body.subjectId !== undefined) return res.status(400).json({ success: false, message: "Use subjectIds as an array containing exactly one subject ID" });
+    if (fullName === undefined && phone === undefined && subjectIds === undefined) {
       return res.status(400).json({
         success: false,
-        message: "Invalid coach ID",
+        message: "At least one of fullName, phone or subjectIds is required",
       });
     }
-
-    // At least one field must be provided
-    if (
-      fullName === undefined &&
-      phone === undefined &&
-      subjectId === undefined
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "At least one field is required",
-      });
+    if ((fullName !== undefined && (typeof fullName !== "string" || !fullName.trim())) ||
+        (phone !== undefined && (typeof phone !== "string" || !phone.trim()))) {
+      return res.status(400).json({ success: false, message: "fullName and phone must be non-empty strings" });
     }
 
     const coach = await Coach.findById(id);
@@ -183,58 +144,28 @@ const updateCoach = async (req, res) => {
       });
     }
 
-    // Update fullName
-    if (fullName !== undefined) {
-      if (typeof fullName !== "string" || !fullName.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: "fullName must be a non-empty string",
-        });
-      }
-
-      coach.fullName = fullName.trim();
+    const qualification = await validateSubjectIds(subjectIds !== undefined ? subjectIds : coach.subjectIds?.map(String));
+    if (!qualification.valid) return res.status(qualification.status).json({ success: false, message: qualification.message });
+    const assignedClasses = await Class.find({ coachId: coach._id }).select("subjectId");
+    if (assignedClasses.some(cls => !coachCanTeach(qualification, cls.subjectId))) {
+      return res.status(409).json({ success: false, message: "Cannot change specialty while assigned to a class of another subject" });
     }
-
-    // Update phone
-    if (phone !== undefined) {
-      if (typeof phone !== "string" || !phone.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: "phone must be a non-empty string",
-        });
-      }
-
-      coach.phone = phone.trim();
-    }
-
-    // Update Subject
-    if (subjectId !== undefined) {
-      if (!mongoose.isValidObjectId(subjectId)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid subjectId",
-        });
-      }
-
-      const subject = await Subject.findById(subjectId);
-
-      if (!subject) {
-        return res.status(404).json({
-          success: false,
-          message: "Subject not found",
-        });
-      }
-
-      coach.subjectId = subjectId;
-    }
+    coach.subjectIds = qualification.subjectIds;
+    if (fullName !== undefined) coach.fullName = fullName.trim();
+    if (phone !== undefined) coach.phone = phone.trim();
 
     await coach.save();
-    await coach.populate("subjectId");
 
     return res.status(200).json({
       success: true,
       message: "Coach updated successfully",
-      data: coach,
+      data: {
+        id: coach._id,
+        userId: coach.userId,
+        fullName: coach.fullName,
+        phone: coach.phone,
+        subjectIds: coach.subjectIds,
+      },
     });
   } catch (error) {
     console.error("Update coach error:", error);
@@ -267,6 +198,9 @@ const deleteCoach = async (req, res) => {
       });
     }
 
+    if (await hasDeletionDependencies("coach", coach)) {
+      return res.status(409).json({ success: false, message: "Cannot delete coach because related records exist" });
+    }
     await Coach.findByIdAndDelete(id);
 
     return res.status(200).json({
@@ -349,8 +283,7 @@ const getMyCoachProfile = async (req, res) => {
     const userId = req.user.userId || req.user._id;
 
     const coach = await Coach.findOne({ userId })
-      .select("_id userId fullName phone subjectId createdAt updatedAt")
-      .populate("subjectId");
+      .select("_id userId fullName phone subjectIds createdAt updatedAt");
 
     if (!coach) {
       return res.status(404).json({

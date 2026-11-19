@@ -14,62 +14,24 @@ const VALID_REGISTRATION_STATUSES = [
   "CANCELLED",
 ];
 
-const ACTIVE_REGISTRATION_STATUSES = [
-  "PENDING_PAYMENT",
-  "CONFIRMED",
-];
-
 const isValidId = (id) => mongoose.isValidObjectId(id);
 
-// Get the correct one-time course price based on classType.
-const getClassPrice = async (classData) => {
+// Every student pays the course tuition independently of the other registrations.
+const getClassPrice = async classData => {
   const course = await Course.findById(classData.courseId);
-
-  if (!course) {
-    return {
-      success: false,
-      statusCode: 404,
-      message: "Course not found",
-    };
+  if (!course) return { success: false, statusCode: 404, message: "Course not found" };
+  if (course.status !== "ACTIVE") return { success: false, statusCode: 409, message: "Course is not accepting registrations" };
+  const price = Course.tuitionOf(course);
+  if (price === undefined) {
+    return { success: false, statusCode: 400, message: "Course tuition has not been configured" };
   }
-
-  if (!course.pricing) {
-    return {
-      success: false,
-      statusCode: 400,
-      message: "Course pricing has not been configured",
-    };
-  }
-
-  const priceType =
-    classData.classType === "PERSONAL" ? "personal" : "group";
-
-  const price = course.pricing[priceType];
-
-  if (
-    typeof price !== "number" ||
-    !Number.isFinite(price) ||
-    price < 0
-  ) {
-    return {
-      success: false,
-      statusCode: 400,
-      message: `Invalid ${priceType} course price`,
-    };
-  }
-
-  return {
-    success: true,
-    price,
-    priceType,
-  };
+  return { success: true, price };
 };
 
-// PENDING_PAYMENT also reserves the single place in a PERSONAL class.
-// Old class records without classType are treated as GROUP.
 const checkClassCapacity = async (
   classData,
-  excludeRegistrationId = null
+  excludeRegistrationId = null,
+    session = null
 ) => {
   if ((classData.classType || "GROUP") !== "PERSONAL") {
     return { available: true };
@@ -77,7 +39,7 @@ const checkClassCapacity = async (
 
   const filter = {
     classId: classData._id,
-    status: { $in: ACTIVE_REGISTRATION_STATUSES },
+    status: { $in: ["PENDING_PAYMENT", "CONFIRMED"] },
   };
 
   if (excludeRegistrationId) {
@@ -85,7 +47,7 @@ const checkClassCapacity = async (
   }
 
   const activeRegistration =
-    await ClassRegistration.findOne(filter);
+    await ClassRegistration.findOne(filter).session(session);
 
   if (activeRegistration) {
     return {
@@ -166,7 +128,7 @@ const registerClass = async (req, res) => {
       }
     }
 
-    // Get price from Course based on classType.
+    // Get the per-student tuition from the course.
     // Never accept price from frontend.
     const priceResult = await getClassPrice(classData);
 
@@ -205,15 +167,8 @@ const registerClass = async (req, res) => {
       });
     }
 
-    // Check PERSONAL class capacity
-    const capacity = await checkClassCapacity(classData);
-
-    if (!capacity.available) {
-      return res.status(409).json({
-        success: false,
-        message: capacity.message,
-      });
-    }
+    const capacity = await checkClassCapacity(classData, existingRegistration?._id);
+    if (!capacity.available) return res.status(409).json({ success: false, message: capacity.message });
 
     // Reactivate a cancelled registration if it has no payment history.
     if (existingRegistration) {
@@ -288,10 +243,10 @@ const getClassRegistrations = async (req, res) => {
       .populate("memberId", "fullName phone goal level")
       .populate({
         path: "classId",
-        select: "name subjectId courseId coachId classType",
+        select: "name subjectId courseId coachId",
         populate: {
           path: "courseId",
-          select: "name pricing",
+          select: "name price pricing",
         },
       })
       .sort({ createdAt: -1 });
@@ -481,29 +436,19 @@ const updateClassRegistration = async (req, res) => {
       status !== undefined ? status : registration.status;
 
     if (newStatus === "CANCELLED" && registration.status !== "CANCELLED" &&
-        await Payment.exists({ classRegistrationId: registration._id, status: "PENDING", payosOrderCode: { $exists: true } })) {
+        await Payment.exists({ classRegistrationId: registration._id, status: "PENDING", paymentMethod: "ONLINE" })) {
       return res.status(409).json({
         success: false,
         message: "Hãy hủy yêu cầu trên trang payOS hoặc đợi link hết hạn, rồi kiểm tra trạng thái thanh toán trước khi hủy đăng ký.",
       });
     }
 
-    // Check PERSONAL class capacity
-    if (ACTIVE_REGISTRATION_STATUSES.includes(newStatus)) {
-      const capacity = await checkClassCapacity(
-        classData,
-        registration._id
-      );
-
-      if (!capacity.available) {
-        return res.status(409).json({
-          success: false,
-          message: capacity.message,
-        });
-      }
+    // Staff cannot confirm without a successful payment.
+    if (["PENDING_PAYMENT", "CONFIRMED"].includes(newStatus)) {
+      const capacity = await checkClassCapacity(classData, registration._id);
+      if (!capacity.available) return res.status(409).json({ success: false, message: capacity.message });
     }
 
-    // Staff cannot confirm without a successful payment.
     if (newStatus === "CONFIRMED") {
       const successfulPayment = await Payment.exists({
         classRegistrationId: registration._id,
@@ -587,12 +532,12 @@ const confirmRegistration = async (req, res) => {
       if (registration.status === "CONFIRMED") return { registration, payment: null, alreadyConfirmed: true };
 
       if (await Payment.exists({ classRegistrationId: registration._id, status: "PENDING", payosOrderCode: { $exists: true } }).session(session)) {
-        throw fail(409, "Hội viên đang có link thanh toán payOS chưa xong. Kiểm tra trạng thái thanh toán trước khi thu tiền tại quầy.");
+        throw fail(409, "Hội viên đang có yêu cầu thanh toán trực tuyến chưa xong. Kiểm tra trạng thái thanh toán trước khi thu tiền tại quầy.");
       }
 
       const classData = await Class.findById(registration.classId).session(session);
       if (!classData) throw fail(404, "Không tìm thấy lớp học của đăng ký.");
-      const capacity = await checkClassCapacity(classData, registration._id);
+      const capacity = await checkClassCapacity(classData, registration._id, session);
       if (!capacity.available) throw fail(409, capacity.message);
 
       const now = new Date();

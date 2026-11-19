@@ -1,58 +1,43 @@
 const jwt = require("jsonwebtoken");
-
+const mongoose = require("mongoose");
 const User = require("../models/User");
 
-// Verifies the JWT, then reloads role and status from the database so that a
-// manager's role change or account lock takes effect on the very next request.
 const authMiddleware = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({
-      success: false,
-      message: "Authentication required",
-    });
-  }
-
   let decoded;
   try {
-    decoded = jwt.verify(authHeader.split(" ")[1], process.env.JWT_SECRET);
-  } catch {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET
+    );
+
+  } catch (error) {
     return res.status(401).json({
       success: false,
       message: "Invalid or expired token",
     });
   }
-
+  if (!decoded || typeof decoded !== "object" || decoded.purpose || !mongoose.isValidObjectId(decoded.userId)) return res.status(401).json({ success: false, message: "Invalid account reference" });
   try {
-    const user = await User.findById(decoded.userId).select("role status +sessionVersion").lean();
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "Account no longer exists",
-      });
-    }
-
-    if ((decoded.sessionVersion ?? 0) !== (user.sessionVersion ?? 0)) {
-      return res.status(401).json({ success: false, message: "Session expired" });
-    }
-
-    if (user.status !== "ACTIVE") {
-      return res.status(403).json({
-        success: false,
-        message: "Account is locked",
-      });
-    }
-
-    req.user = {
-      userId: String(user._id),
-      role: user.role,
-    };
-
+    const user = await User.findById(decoded.userId).select("role status +tokenVersion +sessionVersion");
+    if (!user) return res.status(401).json({ success: false, message: "Account no longer exists" });
+    if (user.status !== "ACTIVE") return res.status(403).json({ success: false, message: "Account is inactive" });
+    if ((decoded.tokenVersion || 0) !== (user.tokenVersion || 0)) return res.status(401).json({ success: false, message: "Session has been revoked; please sign in again" });
+    if ((decoded.sessionVersion ?? 0) !== (user.sessionVersion ?? 0)) return res.status(401).json({ success: false, message: "Session expired" });
+    req.user = { userId: user._id.toString(), role: user.role };
     return next();
   } catch (error) {
-    return next(error);
+    return res.status(503).json({ success: false, message: "Could not verify account status" });
   }
 };
 

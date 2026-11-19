@@ -37,6 +37,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(activityLogger);
+app.use(require("./middlewares/activityEvents"));
 
 // API Routes
 app.use("/api/auth", authRoutes);
@@ -76,6 +77,12 @@ app.get("/", (req, res) => {
   res.json({
     message: "Sport Center API is running",
   });
+});
+
+app.use((error, _req, res, next) => {
+  if (res.headersSent) return next(error);
+  return res.status(error.type === "entity.parse.failed" ? 400 : 500).json({ success: false,
+    message: error.type === "entity.parse.failed" ? "Invalid JSON request body" : "Internal server error" });
 });
 
 module.exports = app;

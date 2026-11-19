@@ -49,6 +49,12 @@ const supportRequestSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    handlingNotes: [{
+      text: { type: String, required: true, maxlength: 2000 },
+      staffId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+      createdAt: { type: Date, default: Date.now },
+    }],
+    handledBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
   {
     timestamps: true,

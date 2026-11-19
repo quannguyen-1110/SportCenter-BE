@@ -25,7 +25,7 @@ const router = express.Router();
  * /api/courses:
  *   post:
  *     summary: Create a new course
- *     description: Create a course with personal and group prices for the entire course.
+ *     description: Create a course with one tuition fee per student for the entire course.
  *     tags: [Courses]
  *     security:
  *       - bearerAuth: []
@@ -38,7 +38,7 @@ const router = express.Router();
  *             required:
  *               - subjectId
  *               - name
- *               - pricing
+ *               - price
  *             properties:
  *               subjectId:
  *                 type: string
@@ -49,22 +49,11 @@ const router = express.Router();
  *               description:
  *                 type: string
  *                 example: Basic badminton training course
- *               pricing:
- *                 type: object
- *                 required:
- *                   - personal
- *                   - group
- *                 properties:
- *                   personal:
- *                     type: number
- *                     minimum: 0
- *                     example: 2000000
- *                     description: One-time price for the entire personal course.
- *                   group:
- *                     type: number
- *                     minimum: 0
- *                     example: 1200000
- *                     description: One-time price for the entire group course.
+ *               price:
+ *                 type: number
+ *                 minimum: 0
+ *                 example: 1200000
+ *                 description: One-time tuition per student for the entire course.
  *               status:
  *                 type: string
  *                 enum: [ACTIVE, INACTIVE]
@@ -74,7 +63,7 @@ const router = express.Router();
  *       201:
  *         description: Course created successfully
  *       400:
- *         description: Invalid subjectId, name, pricing, or status
+ *         description: Invalid subjectId, name, price, or status
  *       401:
  *         description: Authentication required
  *       403:
@@ -97,7 +86,7 @@ router.post(
  * @swagger
  * /api/courses:
  *   get:
- *     summary: Get all courses including both prices and subjects
+ *     summary: Get all courses including tuition per student and subjects
  *     tags: [Courses]
  *     security:
  *       - bearerAuth: []
@@ -126,15 +115,10 @@ router.post(
  *                         example: Badminton Basic
  *                       description:
  *                         type: string
- *                       pricing:
- *                         type: object
- *                         properties:
- *                           personal:
- *                             type: number
- *                             example: 2000000
- *                           group:
- *                             type: number
- *                             example: 1200000
+ *                       price:
+ *                         type: number
+ *                         minimum: 0
+ *                         example: 1200000
  *                       status:
  *                         type: string
  *                         enum: [ACTIVE, INACTIVE]
@@ -154,7 +138,7 @@ router.get(
  * /api/courses/{id}:
  *   put:
  *     summary: Update course information
- *     description: Update course name, subject, description, personal price, group price, or status.
+ *     description: Update course name, subject, description, tuition per student, or status.
  *     tags: [Courses]
  *     security:
  *       - bearerAuth: []
@@ -182,20 +166,11 @@ router.get(
  *               description:
  *                 type: string
  *                 example: Advanced badminton training course
- *               pricing:
- *                 type: object
- *                 required:
- *                   - personal
- *                   - group
- *                 properties:
- *                   personal:
- *                     type: number
- *                     minimum: 0
- *                     example: 2500000
- *                   group:
- *                     type: number
- *                     minimum: 0
- *                     example: 1500000
+ *               price:
+ *                 type: number
+ *                 minimum: 0
+ *                 example: 1200000
+ *                 description: One-time tuition per student for the entire course.
  *               status:
  *                 type: string
  *                 enum: [ACTIVE, INACTIVE]

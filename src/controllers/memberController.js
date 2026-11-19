@@ -1,4 +1,5 @@
 const Member = require("../models/Member");
+const { hasDeletionDependencies } = require("../services/deletionDependencies");
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 
@@ -88,6 +89,15 @@ const getMembers = async (req, res) => {
         : "";
 
     const filter = {};
+    if (req.user.role === "COACH") {
+      const coach = await require("../models/Coach").findOne({ userId: req.user.userId });
+      if (!coach) return res.status(404).json({ success: false, message: "Coach profile not found" });
+      const classes = await require("../models/Class").find({ coachId: coach._id }).select("_id");
+      const memberIds = await require("../models/ClassRegistration").distinct("memberId", {
+        classId: { $in: classes.map(item => item._id) }, status: "CONFIRMED",
+      });
+      filter._id = { $in: memberIds };
+    }
 
     if (rawQuery) {
       // Escape regex special characters to search literal text.
@@ -115,6 +125,7 @@ const getMembers = async (req, res) => {
       .select(
         "_id userId fullName phone goal level createdAt updatedAt"
       )
+      .populate("userId", "email role status")
       .sort({ createdAt: -1 })
       .limit(100);
 
@@ -209,6 +220,9 @@ const deleteMember = async (req, res) => {
       });
     }
 
+    if (await hasDeletionDependencies("member", member)) {
+      return res.status(409).json({ success: false, message: "Cannot delete member because related records exist" });
+    }
     await Member.findByIdAndDelete(id);
 
     return res.status(200).json({
@@ -436,6 +450,9 @@ const createMemberAtFrontDesk = async (req, res) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ success: false, message: "Invalid email format" });
+    }
     const normalizedPhone = phone.trim();
     const memberLevel = level || "BEGINNER";
 

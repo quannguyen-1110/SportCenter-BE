@@ -32,6 +32,7 @@ const notificationSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    eventKey: { type: String, unique: true, sparse: true, select: false },
   },
   {
     timestamps: true,

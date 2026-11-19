@@ -91,6 +91,9 @@ const createLessonProgress = async (req, res) => {
         message: "Class not found",
       });
     }
+    if (lesson.classId && String(lesson.classId) !== String(classId)) {
+      return res.status(400).json({ success: false, message: "Lesson belongs to a different class" });
+    }
 
     // The lesson must belong to the course used by this class.
     const learningPath = await LearningPath.findById(

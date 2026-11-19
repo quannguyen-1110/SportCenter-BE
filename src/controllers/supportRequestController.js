@@ -187,7 +187,7 @@ const getSupportRequests = async (req, res) => {
 const updateSupportRequestStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, note } = req.body;
     const response = typeof req.body.response === "string" ? req.body.response.trim() : "";
 
     if (!isValidId(id)) {
@@ -202,6 +202,9 @@ const updateSupportRequestStatus = async (req, res) => {
         success: false,
         message: "status must be PENDING or RESOLVED",
       });
+    }
+    if (note !== undefined && (typeof note !== "string" || !note.trim() || note.trim().length > 2000)) {
+      return res.status(400).json({ success: false, message: "Handling note must contain 1 to 2000 characters" });
     }
 
     if (status === undefined && !response) {
@@ -240,6 +243,8 @@ const updateSupportRequestStatus = async (req, res) => {
       supportRequest.resolvedAt = status === "RESOLVED" ? supportRequest.resolvedAt || new Date() : null;
     }
 
+    supportRequest.handledBy = req.user.userId;
+    if (note !== undefined) supportRequest.handlingNotes.push({ text: note.trim(), staffId: req.user.userId });
     await supportRequest.save();
 
     // Notify on an answer, or when a request is closed now (not on reopen).

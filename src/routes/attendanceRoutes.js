@@ -14,6 +14,7 @@ const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
+const attendanceWrite = require("../middlewares/attendanceWrite");
 
 /**
  * @swagger
@@ -111,6 +112,7 @@ router.post(
   "/coach",
   authMiddleware,
   roleMiddleware("COACH"),
+  attendanceWrite,
   createCoachAttendance
 );
 
@@ -206,6 +208,7 @@ router.post(
     "COACH",
     "RECEPTIONIST"
   ),
+  attendanceWrite,
   createAttendance
 );
 
@@ -276,6 +279,7 @@ router.put(
     "COACH",
     "RECEPTIONIST"
   ),
+  attendanceWrite,
   updateAttendance
 );
 
@@ -314,6 +318,7 @@ router.delete(
     "COACH",
     "RECEPTIONIST"
   ),
+  attendanceWrite,
   deleteAttendance
 );
 

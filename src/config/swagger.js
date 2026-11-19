@@ -13,8 +13,12 @@ const options = {
 
     servers: [
       {
-        url: "https://sportcenter-be.onrender.com",
+        url: `http://localhost:${process.env.PORT || 5000}`,
         description: "Local development server",
+      },
+      {
+        url: "https://sportcenter-be.onrender.com",
+        description: "Production server",
       },
     ],
 

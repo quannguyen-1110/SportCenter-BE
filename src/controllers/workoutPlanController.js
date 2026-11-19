@@ -1,12 +1,14 @@
 const mongoose = require("mongoose");
 const WorkoutPlan = require("../models/WorkoutPlan");
+const { hasDeletionDependencies } = require("../services/deletionDependencies");
 const Coach = require("../models/Coach");
 const Member = require("../models/Member");
 const Class = require("../models/Class");
 const ClassRegistration = require("../models/ClassRegistration");
+const { coachCanAccessMember, coachTrainingScope } = require("../services/coachAccess");
 
 const VALID_LEVELS = ["BEGINNER", "INTERMEDIATE", "ADVANCED"];
-const VALID_SOURCES = ["COACH", "AI"];
+const VALID_SOURCES = ["COACH"];
 const VALID_STATUSES = ["DRAFT", "APPROVED"];
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -139,7 +141,7 @@ const createWorkoutPlan = async (req, res) => {
     if (!VALID_SOURCES.includes(planSource)) {
       return res.status(400).json({
         success: false,
-        message: "source must be COACH or AI",
+        message: "AI features are deferred; source must be COACH",
       });
     }
 
@@ -169,6 +171,9 @@ const createWorkoutPlan = async (req, res) => {
           success: false,
           message: "Member not found",
         });
+      }
+      if (!await coachCanAccessMember(coach._id, memberId)) {
+        return res.status(403).json({ success: false, message: "Member must have a confirmed registration in your assigned class" });
       }
     }
 
@@ -226,7 +231,7 @@ const getWorkoutPlans = async (req, res) => {
         });
       }
 
-      filter = { coachId: coach._id };
+      filter = { coachId: coach._id, ...await coachTrainingScope(coach._id) };
     } else if (req.user.role === "MEMBER") {
       const member = await Member.findOne({ userId: req.user.userId });
 
@@ -265,6 +270,7 @@ const getWorkoutPlans = async (req, res) => {
       });
     }
 
+    if (req.user.role === "MEMBER") filter = { $and: [filter, { status: "APPROVED" }] };
     const workoutPlans = await WorkoutPlan.find(filter)
       .populate("coachId", "fullName phone")
       .populate("memberId", "fullName phone goal level")
@@ -344,7 +350,7 @@ const updateWorkoutPlan = async (req, res) => {
     if (!VALID_SOURCES.includes(planSource)) {
       return res.status(400).json({
         success: false,
-        message: "source must be COACH or AI",
+        message: "AI features are deferred; source must be COACH",
       });
     }
 
@@ -387,6 +393,9 @@ const updateWorkoutPlan = async (req, res) => {
           message: "Member not found",
         });
       }
+      if (!await coachCanAccessMember(coach._id, memberId)) {
+        return res.status(403).json({ success: false, message: "Member must have a confirmed registration in your assigned class" });
+      }
     }
 
     if (classId) {
@@ -394,6 +403,10 @@ const updateWorkoutPlan = async (req, res) => {
       if (!classData) return;
     }
 
+    if ((String(workoutPlan.memberId || "") !== String(memberId || "") || String(workoutPlan.classId || "") !== String(classId || "")) &&
+        await require("../models/WorkoutResult").exists({ workoutPlanId: workoutPlan._id })) {
+      return res.status(409).json({ success: false, message: "Cannot reassign a plan with recorded results" });
+    }
     workoutPlan.memberId = memberId || null;
     workoutPlan.classId = classId || null;
     workoutPlan.goal = goal.trim();
@@ -447,6 +460,9 @@ const deleteWorkoutPlan = async (req, res) => {
       });
     }
 
+    if (await hasDeletionDependencies("workoutPlan", workoutPlan)) {
+      return res.status(409).json({ success: false, message: "Cannot delete workout plan because results exist" });
+    }
     await workoutPlan.deleteOne();
 
     return res.status(200).json({

@@ -17,7 +17,7 @@ const router = express.Router();
  * @swagger
  * /api/lessons:
  *   post:
- *     summary: Create a lesson for a class
+ *     summary: Create a class lesson or a learning-path template (omit classId)
  *     tags: [Lessons]
  *     security:
  *       - bearerAuth: []
@@ -28,14 +28,14 @@ const router = express.Router();
  *           schema:
  *             type: object
  *             required:
- *               - classId
  *               - learningPathId
  *               - title
  *               - order
  *             properties:
  *               classId:
  *                 type: string
- *                 description: ID of the class this lesson belongs to
+ *                 nullable: true
+ *                 description: Class ID; omit or set null to create a reusable learning-path template
  *                 example: 67abc1234567890123456789
  *               learningPathId:
  *                 type: string
@@ -78,7 +78,17 @@ router.post(
  * @swagger
  * /api/lessons:
  *   get:
- *     summary: Get all lessons
+ *     summary: Get lessons, optionally filtering reusable learning-path templates
+ *     parameters:
+ *       - in: query
+ *         name: templates
+ *         description: Manager only; true returns lessons without a class
+ *         schema:
+ *           type: boolean
+ *       - in: query
+ *         name: learningPathId
+ *         schema:
+ *           type: string
  *     tags: [Lessons]
  *     security:
  *       - bearerAuth: []

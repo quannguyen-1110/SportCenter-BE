@@ -1,6 +1,6 @@
 const express = require("express");
 
-const { getOverview } = require("../controllers/reportController");
+const { getOverview, getReportSummary } = require("../controllers/reportController");
 const authMiddleware = require("../middlewares/authMiddleware");
 const roleMiddleware = require("../middlewares/roleMiddleware");
 
@@ -32,4 +32,5 @@ const router = express.Router();
  */
 router.get("/overview", authMiddleware, roleMiddleware("CENTER_MANAGER"), getOverview);
 
+router.get("/summary", authMiddleware, roleMiddleware("CENTER_MANAGER"), getReportSummary);
 module.exports = router;

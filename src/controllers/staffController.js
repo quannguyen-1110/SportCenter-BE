@@ -164,7 +164,7 @@ const createStaffAccount = async (req, res) => {
     }
 
     // Validate required fields
-    if (!email || !password || !fullName || !phone) {
+    if ([email, password, fullName, phone].some(value => typeof value !== "string" || !value.trim())) {
       return res.status(400).json({
         success: false,
         message: "Email, password, fullName and phone are required",
@@ -257,10 +257,10 @@ const createStaffAccount = async (req, res) => {
         userId: user._id,
         fullName: normalizedName,
         phone: normalizedPhone,
-        subjectId: subject._id,
+        subjectIds: [subject._id],
       });
 
-      await coachProfile.populate("subjectId");
+      await coachProfile.populate("subjectIds");
     }
 
     return res.status(201).json({
@@ -311,4 +311,37 @@ module.exports = {
   getRoles,
   listAccounts,
   updateAccountAccess,
+};
+
+const publicAccount = user => ({ id: user._id, email: user.email, fullName: user.fullName,
+  phone: user.phone, role: user.role, status: user.status, authProvider: user.authProvider, createdAt: user.createdAt });
+
+
+module.exports.updateStaffAccount = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: "Invalid account ID" });
+    const { status, fullName, phone, role } = req.body || {};
+    if (role !== undefined) return res.status(400).json({ success: false, message: "Account roles cannot be changed through this endpoint" });
+    if (status === undefined && fullName === undefined && phone === undefined) return res.status(400).json({ success: false, message: "Provide account details or status" });
+    if ((status !== undefined && !["ACTIVE", "INACTIVE"].includes(status)) ||
+        [fullName, phone].some(value => value !== undefined && (typeof value !== "string" || !value.trim()))) {
+      return res.status(400).json({ success: false, message: "Invalid account details or status" });
+    }
+    const result = await mongoose.connection.transaction(async session => {
+      const user = await User.findById(req.params.id).session(session);
+      if (!user) throw Object.assign(new Error("Account not found"), { status: 404 });
+      if (user.role === "CENTER_MANAGER") throw Object.assign(new Error("Manager accounts cannot be modified here"), { status: 403 });
+      if (status !== undefined) user.status = status;
+      if (fullName !== undefined) user.fullName = fullName.trim();
+      if (phone !== undefined) user.phone = phone.trim();
+      await user.save({ session });
+      const updates = { ...(fullName !== undefined ? { fullName: user.fullName } : {}), ...(phone !== undefined ? { phone: user.phone } : {}) };
+      if (Object.keys(updates).length) {
+        const Profile = user.role === "COACH" ? Coach : require("../models/Member");
+        if (["COACH", "MEMBER"].includes(user.role)) await Profile.updateOne({ userId: user._id }, { $set: updates }, { session });
+      }
+      return publicAccount(user);
+    });
+    return res.json({ success: true, data: result });
+  } catch (error) { return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : "Could not update account" }); }
 };

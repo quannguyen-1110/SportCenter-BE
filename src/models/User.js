@@ -64,6 +64,7 @@ googleOtpVerified: {
       enum: ["ACTIVE", "INACTIVE"],
       default: "ACTIVE",
     },
+    tokenVersion: { type: Number, default: 0, select: false },
   },
   {
     timestamps: true,

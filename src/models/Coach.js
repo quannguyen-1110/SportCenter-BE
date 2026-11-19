@@ -20,13 +20,15 @@ const coachSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-
-    // Mỗi HLV chỉ phụ trách một môn thể thao
-    subjectId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Subject",
+    subjectIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Subject" }],
+      default: undefined,
       required: true,
-      index: true,
+      castNonArrays: false,
+      validate: {
+        validator: value => Array.isArray(value) && value.length === 1,
+        message: "Each coach must have exactly one subject in subjectIds",
+      },
     },
   },
   {
