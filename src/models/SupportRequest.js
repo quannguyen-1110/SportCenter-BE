@@ -19,13 +19,42 @@ const supportRequestSchema = new mongoose.Schema(
       enum: ["PENDING", "RESOLVED"],
       default: "PENDING",
     },
+
+    // Who logged the request: the member in the app, or staff at the front desk.
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    // Latest answer from the center to the member.
+    response: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    respondedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    respondedAt: {
+      type: Date,
+      default: null,
+    },
+
+    resolvedAt: {
+      type: Date,
+      default: null,
+    },
     handlingNotes: [{
       text: { type: String, required: true, maxlength: 2000 },
       staffId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
       createdAt: { type: Date, default: Date.now },
     }],
     handledBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-    resolvedAt: { type: Date, default: null },
   },
   {
     timestamps: true,

@@ -24,6 +24,14 @@ const notificationSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Who sent it: the manager / receptionist / coach account; null for automatic notifications
+    // (reminders, registration and payment updates).
+    sentBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
     eventKey: { type: String, unique: true, sparse: true, select: false },
   },
   {

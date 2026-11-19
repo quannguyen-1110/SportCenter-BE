@@ -66,7 +66,7 @@ const createPaymentForProvider = async (req, res, provider) => {
 
 
 // Gateway selection belongs to explicit endpoints, not a shared environment switch.
-const createPayment = (req, res) => createPaymentForProvider(req, res, "VNPAY");
+const createPayment = (req, res) => createPaymentForProvider(req, res, req.user.role === "RECEPTIONIST" && process.env.PAYMENT_MODE === "payos" ? "PAYOS" : "VNPAY");
 const createPayosPayment = (req, res) => createPaymentForProvider(req, res, "PAYOS");
 
 // GET payments visible to the signed-in user
@@ -235,7 +235,7 @@ if (req.user.role === "MEMBER") {
     if (paymentMethod !== undefined && paymentMethod !== payment.paymentMethod) {
       const updated = await Payment.findOneAndUpdate(
         { _id: payment._id, status: "PENDING", payosOrderCode: { $exists: false } },
-        { $set: { paymentMethod, ...(paymentMethod === "ONLINE" ? { paymentProvider: "VNPAY" } : {}) } },
+        { $set: { paymentMethod, ...(paymentMethod === "ONLINE" ? { paymentProvider: req.user.role === "RECEPTIONIST" && process.env.PAYMENT_MODE === "payos" ? "PAYOS" : "VNPAY" } : {}) } },
         { returnDocument: "after" }
       );
       if (!updated) {

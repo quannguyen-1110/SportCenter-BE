@@ -4,6 +4,147 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const Coach = require("../models/Coach");
 const Subject = require("../models/Subject");
+const Class = require("../models/Class");
+const { roles: rolePermissions } = require("../config/permissions");
+
+const STAFF_ROLES = ["CENTER_MANAGER", "COACH", "RECEPTIONIST"];
+const ALL_ROLES = [...STAFF_ROLES, "MEMBER"];
+const STATUSES = ["ACTIVE", "INACTIVE"];
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// GET /api/staff/roles - what each role may do in the system
+const getRoles = (req, res) => res.json({ success: true, data: rolePermissions });
+
+// GET /api/staff/accounts?role=&status=&q=
+// Without role, lists staff accounts (manager, coach, receptionist).
+const listAccounts = async (req, res) => {
+  try {
+    const { role, status } = req.query;
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+
+    if (role && !ALL_ROLES.includes(role)) {
+      return res.status(400).json({ success: false, message: "Invalid role" });
+    }
+    if (status && !STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: "Invalid status" });
+    }
+
+    const filter = { role: role || { $in: STAFF_ROLES } };
+    if (status) filter.status = status;
+    if (q) {
+      const pattern = { $regex: escapeRegex(q), $options: "i" };
+      filter.$or = [{ email: pattern }, { fullName: pattern }, { phone: pattern }];
+    }
+
+    const users = await User.find(filter)
+      .select("email fullName phone role status authProvider createdAt")
+      .sort({ role: 1, createdAt: -1 })
+      .limit(500)
+      .lean();
+
+    const coaches = await Coach.find({ userId: { $in: users.map((user) => user._id) } })
+      .populate("subjectIds", "name")
+      .lean();
+    const coachByUser = new Map(
+  coaches.map((coach) => [
+    String(coach.userId),
+    { ...coach, subjectId: coach.subjectIds?.[0] ?? coach.subjectId ?? null },
+  ])
+);
+
+    return res.json({
+      success: true,
+      count: users.length,
+      data: users.map((user) => ({ ...user, coach: coachByUser.get(String(user._id)) ?? null })),
+    });
+  } catch (error) {
+    console.error("List accounts error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+// PATCH /api/staff/accounts/:id  { role?, status?, subjectId? }
+// Changes a staff member's role or locks/unlocks any account.
+const updateAccountAccess = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role, status, subjectId } = req.body ?? {};
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid account id" });
+    }
+    if (role === undefined && status === undefined) {
+      return res.status(400).json({ success: false, message: "role or status is required" });
+    }
+    if (role !== undefined && !STAFF_ROLES.includes(role)) {
+      return res.status(400).json({ success: false, message: "role must be CENTER_MANAGER, COACH or RECEPTIONIST" });
+    }
+    if (status !== undefined && !STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: "status must be ACTIVE or INACTIVE" });
+    }
+    if (id === req.user.userId) {
+      return res.status(409).json({ success: false, message: "You cannot change your own role or status" });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "Account not found" });
+    }
+
+    if (role !== undefined && role !== user.role) {
+      if (user.role === "MEMBER") {
+        return res.status(409).json({ success: false, message: "Member accounts cannot be converted to staff roles" });
+      }
+
+      const coachProfile = await Coach.findOne({ userId: user._id });
+
+      if (user.role === "COACH" && coachProfile && await Class.exists({ coachId: coachProfile._id })) {
+        return res.status(409).json({
+          success: false,
+          message: "Reassign this coach's class to another coach before changing the role",
+        });
+      }
+
+      if (role === "COACH" && !coachProfile) {
+        if (!mongoose.isValidObjectId(subjectId) || !await Subject.exists({ _id: subjectId })) {
+          return res.status(400).json({ success: false, message: "A valid subjectId is required to become COACH" });
+        }
+        await Coach.create({
+          userId: user._id,
+          fullName: user.fullName || user.email,
+          phone: user.phone || "N/A",
+          subjectId,
+        });
+      }
+
+      if (user.role === "COACH" && coachProfile) {
+        await Coach.deleteOne({ _id: coachProfile._id });
+      }
+
+      user.role = role;
+    }
+
+    if (status !== undefined) user.status = status;
+
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: "Account access updated successfully",
+      data: {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        status: user.status,
+      },
+    });
+  } catch (error) {
+    console.error("Update account access error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
 
 // CENTER_MANAGER creates COACH or RECEPTIONIST accounts
 const createStaffAccount = async (req, res) => {
@@ -172,17 +313,14 @@ const createStaffAccount = async (req, res) => {
 
 module.exports = {
   createStaffAccount,
+  getRoles,
+  listAccounts,
+  updateAccountAccess,
 };
 
 const publicAccount = user => ({ id: user._id, email: user.email, fullName: user.fullName,
   phone: user.phone, role: user.role, status: user.status, authProvider: user.authProvider, createdAt: user.createdAt });
 
-module.exports.getStaffAccounts = async (req, res) => {
-  try {
-    const users = await User.find().select("email fullName phone role status authProvider createdAt").sort({ createdAt: -1 });
-    return res.json({ success: true, data: users.map(publicAccount) });
-  } catch (error) { return res.status(500).json({ success: false, message: "Could not load accounts" }); }
-};
 
 module.exports.updateStaffAccount = async (req, res) => {
   try {

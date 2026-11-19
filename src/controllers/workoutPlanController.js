@@ -251,8 +251,10 @@ const getWorkoutPlans = async (req, res) => {
       const classIds = registrations.map((item) => item.classId);
 
       // Học viên thấy kế hoạch cá nhân của mình và kế hoạch chung
-      // của những lớp mình đã đăng ký.
+      // của những lớp mình đã đăng ký. Bản nháp (kể cả bản AI tạo)
+      // chỉ hiện sau khi huấn luyện viên duyệt.
       filter = {
+        status: "APPROVED",
         $or: [
           { memberId: member._id },
           {

@@ -75,7 +75,10 @@ router.get("/payos/return", (_req, res) => {
  */
 // Mobile creates payOS payments here; Web keeps POST / and POST /:id/vnpay.
 router.post("/payos", authMiddleware, roleMiddleware("MEMBER"), createPayosPayment);
-router.post("/:id/checkout", authMiddleware, roleMiddleware("MEMBER"), createPayosCheckout);
+router.post("/:id/checkout", authMiddleware, (req, res, next) => {
+  const roles = process.env.PAYMENT_MODE === "payos" ? ["MEMBER", "RECEPTIONIST"] : ["MEMBER"];
+  return roleMiddleware(...roles)(req, res, next);
+}, createPayosCheckout);
 
 /**
  * @swagger

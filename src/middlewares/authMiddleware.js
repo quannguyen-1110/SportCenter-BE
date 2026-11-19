@@ -29,10 +29,11 @@ const authMiddleware = async (req, res, next) => {
   }
   if (!decoded || typeof decoded !== "object" || decoded.purpose || !mongoose.isValidObjectId(decoded.userId)) return res.status(401).json({ success: false, message: "Invalid account reference" });
   try {
-    const user = await User.findById(decoded.userId).select("role status +tokenVersion");
+    const user = await User.findById(decoded.userId).select("role status +tokenVersion +sessionVersion");
     if (!user) return res.status(401).json({ success: false, message: "Account no longer exists" });
     if (user.status !== "ACTIVE") return res.status(403).json({ success: false, message: "Account is inactive" });
     if ((decoded.tokenVersion || 0) !== (user.tokenVersion || 0)) return res.status(401).json({ success: false, message: "Session has been revoked; please sign in again" });
+    if ((decoded.sessionVersion ?? 0) !== (user.sessionVersion ?? 0)) return res.status(401).json({ success: false, message: "Session expired" });
     req.user = { userId: user._id.toString(), role: user.role };
     return next();
   } catch (error) {

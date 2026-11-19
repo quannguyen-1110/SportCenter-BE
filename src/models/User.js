@@ -54,6 +54,11 @@ googleOtpVerified: {
       ],
     },
 
+    resetTokenHash: { type: String, select: false, index: { sparse: true } },
+    resetExpiresAt: { type: Date, select: false },
+    resetRequestedAt: { type: Date, select: false },
+    sessionVersion: { type: Number, default: 0, select: false },
+
     status: {
       type: String,
       enum: ["ACTIVE", "INACTIVE"],

@@ -1,4 +1,3 @@
-const ActivityLog = require("../models/ActivityLog");
 const Notification = require("../models/Notification");
 const Registration = require("../models/ClassRegistration");
 const Payment = require("../models/Payment");
@@ -13,9 +12,6 @@ async function notify(userId, eventKey, title, message) {
   await Notification.updateOne({ eventKey }, { $setOnInsert: { userId, title, message, isRead: false } }, { upsert: true });
 }
 async function publish({ actor, method, path, data }) {
-  if (actor && !path.startsWith("/api/activity-logs")) {
-    await ActivityLog.create({ userId: actor, action: `${method} ${path}` });
-  }
   if (/^\/api\/class-registrations(?:\/|$)/.test(path)) {
     const id = data?.id || data?._id;
     if (!mongoose.isValidObjectId(id)) return;

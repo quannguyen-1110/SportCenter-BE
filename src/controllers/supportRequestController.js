@@ -1,10 +1,44 @@
 const mongoose = require("mongoose");
 const SupportRequest = require("../models/SupportRequest");
 const Member = require("../models/Member");
+const Notification = require("../models/Notification");
 
 const VALID_STATUSES = ["PENDING", "RESOLVED"];
+const MAX_TEXT = 2000;
 
 const isValidId = (id) => mongoose.isValidObjectId(id);
+
+// Member name/phone, plus who logged and who answered the request.
+const populateRequest = (query) =>
+  query
+    .populate("memberId", "fullName phone")
+    .populate("createdBy", "email role")
+    .populate("respondedBy", "email role");
+
+const excerpt = (text, max = 80) =>
+  text.length > max ? `${text.slice(0, max - 1)}…` : text;
+
+// Tells the member that the center answered or closed their request.
+// A failed notification must not undo the reply itself.
+async function notifyMember(supportRequest, { response, resolved }) {
+  try {
+    const member = await Member.findById(supportRequest.memberId).select("userId");
+    if (!member?.userId) return;
+
+    const title = response
+      ? resolved
+        ? "Yêu cầu hỗ trợ đã được giải quyết"
+        : "Trung tâm đã phản hồi yêu cầu hỗ trợ"
+      : "Yêu cầu hỗ trợ đã được giải quyết";
+    const message = response
+      ? `Về yêu cầu "${excerpt(supportRequest.message)}": ${response}`
+      : `Yêu cầu "${excerpt(supportRequest.message)}" đã được trung tâm xử lý.`;
+
+    await Notification.create({ userId: member.userId, title, message });
+  } catch (error) {
+    console.error("Support request notification error:", error.message);
+  }
+}
 
 // POST /api/support-requests
 // MEMBER sends their own request.
@@ -63,12 +97,13 @@ const createSupportRequest = async (req, res) => {
       memberId: targetMember._id,
       message: message.trim(),
       status: "PENDING",
+      createdBy: req.user.userId,
     });
 
-    await supportRequest.populate(
-      "memberId",
-      "fullName phone"
-    );
+    await supportRequest.populate([
+      { path: "memberId", select: "fullName phone" },
+      { path: "createdBy", select: "email role" },
+    ]);
 
     return res.status(201).json({
       success: true,
@@ -126,8 +161,7 @@ const getSupportRequests = async (req, res) => {
       filter.status = status;
     }
 
-    const requests = await SupportRequest.find(filter)
-      .populate("memberId", "fullName phone")
+    const requests = await populateRequest(SupportRequest.find(filter))
       .sort({ createdAt: -1 })
       .limit(100);
 
@@ -146,12 +180,15 @@ const getSupportRequests = async (req, res) => {
   }
 };
 
-// PUT /api/support-requests/:id/status
-// Only Receptionist/Center Manager can resolve or reopen a request.
+// PUT /api/support-requests/:id/status   body: { status?, response? }
+// Only Receptionist/Center Manager can answer, resolve or reopen a request.
+// - response: the answer sent to the member (stored with who/when, member is notified)
+// - status: RESOLVED closes the request, PENDING reopens it; leave it out to answer without closing
 const updateSupportRequestStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status, note } = req.body;
+    const response = typeof req.body.response === "string" ? req.body.response.trim() : "";
 
     if (!isValidId(id)) {
       return res.status(400).json({
@@ -160,7 +197,7 @@ const updateSupportRequestStatus = async (req, res) => {
       });
     }
 
-    if ((status !== undefined && !VALID_STATUSES.includes(status)) || (status === undefined && note === undefined)) {
+    if (status !== undefined && !VALID_STATUSES.includes(status)) {
       return res.status(400).json({
         success: false,
         message: "status must be PENDING or RESOLVED",
@@ -168,6 +205,20 @@ const updateSupportRequestStatus = async (req, res) => {
     }
     if (note !== undefined && (typeof note !== "string" || !note.trim() || note.trim().length > 2000)) {
       return res.status(400).json({ success: false, message: "Handling note must contain 1 to 2000 characters" });
+    }
+
+    if (status === undefined && !response) {
+      return res.status(400).json({
+        success: false,
+        message: "Send a response, a status, or both",
+      });
+    }
+
+    if (response.length > MAX_TEXT) {
+      return res.status(400).json({
+        success: false,
+        message: `response must not exceed ${MAX_TEXT} characters`,
+      });
     }
 
     const supportRequest = await SupportRequest.findById(id);
@@ -179,18 +230,34 @@ const updateSupportRequestStatus = async (req, res) => {
       });
     }
 
+    const wasResolved = supportRequest.status === "RESOLVED";
+
+    if (response) {
+      supportRequest.response = response;
+      supportRequest.respondedBy = req.user.userId;
+      supportRequest.respondedAt = new Date();
+    }
+
     if (status !== undefined) {
       supportRequest.status = status;
-      supportRequest.resolvedAt = status === "RESOLVED" ? new Date() : null;
+      supportRequest.resolvedAt = status === "RESOLVED" ? supportRequest.resolvedAt || new Date() : null;
     }
+
     supportRequest.handledBy = req.user.userId;
     if (note !== undefined) supportRequest.handlingNotes.push({ text: note.trim(), staffId: req.user.userId });
     await supportRequest.save();
 
-    await supportRequest.populate(
-      "memberId",
-      "fullName phone"
-    );
+    // Notify on an answer, or when a request is closed now (not on reopen).
+    const resolvedNow = supportRequest.status === "RESOLVED" && !wasResolved;
+    if (response || resolvedNow) {
+      await notifyMember(supportRequest, { response, resolved: supportRequest.status === "RESOLVED" });
+    }
+
+    await supportRequest.populate([
+      { path: "memberId", select: "fullName phone" },
+      { path: "createdBy", select: "email role" },
+      { path: "respondedBy", select: "email role" },
+    ]);
 
     return res.status(200).json({
       success: true,

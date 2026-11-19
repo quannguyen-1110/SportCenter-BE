@@ -246,7 +246,7 @@ const getMyStudents = async (req, res) => {
     })
       .populate({
         path: "memberId",
-        select: "fullName phone userId",
+        select: "fullName phone userId goal level",
       })
       .populate({
         path: "classId",

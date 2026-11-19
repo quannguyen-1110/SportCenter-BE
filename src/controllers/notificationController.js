@@ -2,6 +2,12 @@
 const mongoose = require("mongoose");
 const Notification = require("../models/Notification");
 const User = require("../models/User");
+const Class = require("../models/Class");
+const ClassRegistration = require("../models/ClassRegistration");
+const Coach = require("../models/Coach");
+const Member = require("../models/Member");
+const { notifyUsers, classMemberUserIds } = require("../services/notificationService");
+const { notificationFilter } = require("../utils/notificationQuery");
 
 // ==========================================
 // CREATE NOTIFICATION
@@ -52,6 +58,7 @@ const createNotification = async (req, res) => {
       userId,
       title: title.trim(),
       message: message.trim(),
+      sentBy: req.user.userId,
     });
 
     return res.status(201).json({
@@ -84,8 +91,10 @@ const createNotification = async (req, res) => {
 // ==========================================
 const getNotifications = async (req, res) => {
   try {
-    const notifications = await Notification.find()
+    // ?sentBy=me → only what the signed-in user sent; otherwise every notification of the center.
+    const notifications = await Notification.find(notificationFilter(req.query, req.user.userId))
       .populate("userId", "email role status")
+      .populate("sentBy", "email role")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -205,7 +214,74 @@ const updateNotification = async (req, res) => {
   }
 };
 
+// ==========================================
+// COACH SENDS A NOTIFICATION
+// POST /api/notifications/coach
+// Body: { classId? , memberId?, title, message }
+// A coach may only reach classes they teach and members confirmed in those classes.
+// ==========================================
+const sendCoachNotification = async (req, res) => {
+  try {
+    const { classId, memberId, title, message } = req.body ?? {};
+
+    if (Boolean(classId) === Boolean(memberId)) {
+      return res.status(400).json({ success: false, message: "Provide exactly one of classId or memberId" });
+    }
+    if ((classId && !mongoose.isValidObjectId(classId)) || (memberId && !mongoose.isValidObjectId(memberId))) {
+      return res.status(400).json({ success: false, message: "Invalid classId or memberId" });
+    }
+    if (typeof title !== "string" || !title.trim() || title.length > 200
+        || typeof message !== "string" || !message.trim() || message.length > 2000) {
+      return res.status(400).json({ success: false, message: "Title and message are required" });
+    }
+
+    const coach = await Coach.findOne({ userId: req.user.userId }).select("_id fullName").lean();
+    if (!coach) {
+      return res.status(404).json({ success: false, message: "Coach profile not found" });
+    }
+    const classIds = (await Class.find({ coachId: coach._id }).select("_id").lean()).map((item) => String(item._id));
+
+    let userIds;
+    if (classId) {
+      if (!classIds.includes(String(classId))) {
+        return res.status(403).json({ success: false, message: "You do not teach this class" });
+      }
+      userIds = await classMemberUserIds(classId);
+    } else {
+      const enrolled = await ClassRegistration.exists({ memberId, classId: { $in: classIds }, status: "CONFIRMED" });
+      const member = enrolled && await Member.findById(memberId).select("userId").lean();
+      if (!member) {
+        return res.status(403).json({ success: false, message: "This member is not in your classes" });
+      }
+      userIds = [member.userId];
+    }
+
+    const sent = await notifyUsers(userIds, title.trim(), `${message.trim()}\n— HLV ${coach.fullName}`, req.user.userId);
+
+    return res.status(201).json({ success: true, message: "Notification sent", data: { recipients: sent } });
+  } catch (error) {
+    console.error("Coach notification error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+// ==========================================
+// MARK ALL MY NOTIFICATIONS AS READ
+// PUT /api/notifications/my/read-all
+// ==========================================
+const markAllMyNotificationsRead = async (req, res) => {
+  try {
+    const result = await Notification.updateMany({ userId: req.user.userId, isRead: false }, { $set: { isRead: true } });
+    return res.json({ success: true, data: { updated: result.modifiedCount } });
+  } catch (error) {
+    console.error("Mark all read error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
 module.exports = {
+  sendCoachNotification,
+  markAllMyNotificationsRead,
   createNotification,
   getNotifications,
   getMyNotifications,

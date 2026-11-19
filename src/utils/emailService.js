@@ -36,4 +36,14 @@ async function sendGoogleLoginOTP(email, otp) {
   });
 }
 
-module.exports = { sendGoogleLoginOTP };
+async function sendAccountEmail(to, subject, text) {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    throw new Error("SMTP_USER or SMTP_PASS is not configured");
+  }
+  return transporter.sendMail({
+    from: `"Sport Center" <${process.env.SMTP_USER}>`,
+    to, subject, text,
+  });
+}
+
+module.exports = { sendGoogleLoginOTP, sendAccountEmail };

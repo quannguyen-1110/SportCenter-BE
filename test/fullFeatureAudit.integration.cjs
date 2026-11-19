@@ -7,6 +7,11 @@ process.env.VNPAY_TMN_CODE = "AUDITTEST";
 process.env.VNPAY_HASH_SECRET = "audit-test-only-vnpay";
 process.env.VNPAY_RETURN_URL = "http://127.0.0.1:5190/payment-result";
 const { seed } = require("./auditFixture.cjs");
+const emailService = require("../src/utils/emailService");
+let registrationOtp;
+emailService.sendAccountEmail = async (_to, _subject, text) => {
+  registrationOtp = text.match(/\b\d{6}\b/)?.[0];
+};
 const app = require("../src/app");
 const events = require("../src/middlewares/activityEvents");
 test("SportCenter real HTTP/MongoDB four-role audit", async t => {
@@ -24,7 +29,10 @@ test("SportCenter real HTTP/MongoDB four-role audit", async t => {
   const id = row => String(row._id || row.id);
   await t.test("All four roles login through bcrypt; public signup cannot grant privileges", async () => {
     for (const role of Object.keys(u)) tokens[role] = ok(await request("/auth/login", "POST", { email: u[role].email, password: f.password }, "PUBLIC")).token;
-    const created = ok(await request("/auth/register", "POST", { email: "public@audit.example.test", password: f.password, role: "CENTER_MANAGER" }, "PUBLIC"), 201);
+    const email = "public@audit.example.test";
+    ok(await request("/auth/register", "POST", { email, password: f.password, role: "CENTER_MANAGER" }, "PUBLIC"), 202);
+    assert.match(registrationOtp, /^\d{6}$/);
+    const created = ok(await request("/auth/register/verify-otp", "POST", { email, otp: registrationOtp }, "PUBLIC"), 201);
     assert.equal(created.role, "MEMBER"); assert.equal((await request("/staff/accounts", "GET", undefined, "PUBLIC")).status, 401);
   });
   await t.test("Database role wins over JWT; inactive users lose access", async () => {
@@ -176,7 +184,7 @@ test("SportCenter real HTTP/MongoDB four-role audit", async t => {
   });
   await t.test("Activity log is automatic, cannot spoof actor and is manager-only", async () => {
     await events.flush();
-    const logs = ok(await request("/activity-logs")); assert(logs.some(row => row.action.includes("record-payment")));
+    const logs = ok(await request("/activity-logs")); assert(logs.some(row => row.path?.includes("record-payment") || row.action.includes("record-payment")));
     assert.equal((await request("/activity-logs", "GET", undefined, "MEMBER")).status, 403);
     const log = ok(await request("/activity-logs", "POST", { action: "Manual audit", userId: u.MEMBER._id }), 201);
     assert.equal(String(log.userId), id(u.CENTER_MANAGER));

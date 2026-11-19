@@ -10,6 +10,39 @@ const Class = require("../models/Class");
 const Lesson = require("../models/Lesson");
 const Room = require("../models/Room");
 const XLSX = require("xlsx");
+const { notifyUsers, classAudienceUserIds, formatDate } = require("../services/notificationService");
+
+// Tells the class's members and coach that a session was moved or cancelled.
+async function announceScheduleChange(before, after) {
+  const classChanged = String(before.classId) !== String(after?.classId);
+  const moved = !after || classChanged
+    || before.date.getTime() !== after.date.getTime()
+    || before.startTime !== after.startTime
+    || before.endTime !== after.endTime
+    || String(before.roomId) !== String(after.roomId);
+  const cancelled = !after || (after.status === "CANCELLED" && before.status !== "CANCELLED");
+  if (!moved && !cancelled) return;
+
+  const sportClass = await Class.findById(before.classId).select("name").lean();
+  const name = sportClass?.name ?? "lớp học";
+  const old = `${formatDate(before.date)} ${before.startTime}-${before.endTime}`;
+
+  let title;
+  let message;
+  if (cancelled) {
+    title = `Hủy buổi học ${name}`;
+    message = `Buổi học ${name} lúc ${old} đã bị hủy.`;
+  } else {
+    const room = await Room.findById(after.roomId).select("name roomNumber").lean();
+    title = `Đổi lịch học ${name}`;
+    message = `Buổi học ${name} lúc ${old} được dời sang ${formatDate(after.date)} ${after.startTime}-${after.endTime}`
+      + (room ? `, phòng ${room.name ?? room.roomNumber}.` : ".");
+  }
+
+  const userIds = await classAudienceUserIds(before.classId);
+  if (classChanged && after) userIds.push(...await classAudienceUserIds(after.classId));
+  await notifyUsers(userIds, title, message);
+}
 
 const VALID_STATUSES = ["SCHEDULED", "COMPLETED", "CANCELLED"];
 
@@ -73,7 +106,7 @@ const populateSchedule = (query) => {
     })
     .populate({
       path: "lessonId",
-      select: "title description order classId learningPathId",
+      select: "title description videoUrl order classId learningPathId",
     })
     .populate({
       path: "roomId",
@@ -559,15 +592,13 @@ const updateSchedule = async (req, res) => {
       }
     }
 
-    schedule.classId = classId;
-    schedule.lessonId = lessonId;
-    schedule.roomId = roomId;
-    schedule.date = normalizedDate;
-    schedule.startTime = startTime;
-    schedule.endTime = endTime;
-    schedule.status = scheduleStatus;
+    const before = schedule.toObject();
 
-    await persistSchedule({ classId, lessonId, roomId, date: normalizedDate, startTime, endTime, status: scheduleStatus }, id);
+
+    const updated = await persistSchedule({ classId, lessonId, roomId, date: normalizedDate, startTime, endTime, status: scheduleStatus }, id);
+    await announceScheduleChange(before, updated.toObject()).catch((error) =>
+      console.error("Schedule change notification error:", error.message)
+    );
 
     const result = await populateSchedule(
       Schedule.findById(schedule._id)
@@ -613,6 +644,12 @@ const deleteSchedule = async (req, res) => {
       return res.status(409).json({ success: false, message: "Cannot delete schedule because attendance records exist" });
     }
     await Schedule.findByIdAndDelete(id);
+
+    if (schedule.status === "SCHEDULED" && schedule.date >= new Date(Date.now() - 86_400_000)) {
+      await announceScheduleChange(schedule.toObject(), null).catch((error) =>
+        console.error("Schedule delete notification error:", error.message)
+      );
+    }
 
     return res.status(200).json({
       success: true,

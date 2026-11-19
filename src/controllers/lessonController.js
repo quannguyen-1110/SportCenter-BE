@@ -68,8 +68,13 @@ const createLesson = async (req, res) => {
       learningPathId,
       title,
       description = "",
+      videoUrl = "",
       order,
     } = req.body;
+
+    if (!Lesson.isValidVideoUrl(videoUrl)) {
+      return res.status(400).json({ success: false, message: "videoUrl must be an HTTP or HTTPS URL" });
+    }
 
     if (
       !learningPathId ||
@@ -126,6 +131,7 @@ const createLesson = async (req, res) => {
       title: title.trim(),
       description:
         typeof description === "string" ? description.trim() : "",
+      videoUrl,
       order: lessonOrder,
     });
 
@@ -256,6 +262,7 @@ const updateLesson = async (req, res) => {
       learningPathId,
       title,
       description,
+      videoUrl,
       order,
     } = req.body;
 
@@ -264,12 +271,17 @@ const updateLesson = async (req, res) => {
       learningPathId === undefined &&
       title === undefined &&
       description === undefined &&
+      videoUrl === undefined &&
       order === undefined
     ) {
       return res.status(400).json({
         success: false,
         message: "At least one field is required to update",
       });
+    }
+
+    if (videoUrl !== undefined && !Lesson.isValidVideoUrl(videoUrl)) {
+      return res.status(400).json({ success: false, message: "videoUrl must be an HTTP or HTTPS URL" });
     }
 
     const lesson = await Lesson.findById(id);
@@ -386,6 +398,9 @@ const updateLesson = async (req, res) => {
 
     if (description !== undefined) {
       lesson.description = description.trim();
+    }
+    if (videoUrl !== undefined) {
+      lesson.videoUrl = videoUrl.trim();
     }
 
     if (order !== undefined) {

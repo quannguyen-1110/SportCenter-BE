@@ -2,13 +2,13 @@
 const express = require("express");
 
 const {
-  register,
   login,
   googleLogin,
   verifyGoogleOTP,
   getMe,
 } = require("../controllers/authController");
 
+const { register, verifyRegistration, forgotPassword, resetPassword } = require('../controllers/emailAuthController');
 const authMiddleware = require("../middlewares/authMiddleware");
 
 const router = express.Router();
@@ -51,14 +51,17 @@ const router = express.Router();
  *                   - RECEPTIONIST
  *                 example: MEMBER
  *     responses:
- *       201:
- *         description: User registered successfully
+ *       202:
+ *         description: OTP email sent
  *       400:
  *         description: Invalid input
  *       409:
  *         description: Email already exists
  */
 router.post("/register", register);
+router.post("/register/verify-otp", verifyRegistration);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
 
 /**
  * @swagger
