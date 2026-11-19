@@ -44,9 +44,14 @@ const listAccounts = async (req, res) => {
       .lean();
 
     const coaches = await Coach.find({ userId: { $in: users.map((user) => user._id) } })
-      .populate("subjectId", "name")
+      .populate("subjectIds", "name")
       .lean();
-    const coachByUser = new Map(coaches.map((coach) => [String(coach.userId), coach]));
+    const coachByUser = new Map(
+  coaches.map((coach) => [
+    String(coach.userId),
+    { ...coach, subjectId: coach.subjectIds?.[0] ?? coach.subjectId ?? null },
+  ])
+);
 
     return res.json({
       success: true,
