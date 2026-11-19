@@ -66,6 +66,7 @@ app.use("/api/membership-orders", membershipOrderRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/manager/catalog-import", require("./routes/catalogImportRoutes"));
+app.use("/api/manager", require("./routes/managerMembershipRoutes"));
 // Swagger
 app.use(
   "/api-docs",

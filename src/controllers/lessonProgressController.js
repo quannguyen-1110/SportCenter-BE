@@ -248,7 +248,7 @@ const getLessonProgress = async (req, res) => {
 
     const progressList = await LessonProgress.find(filter)
       .populate("memberId", "fullName phone goal level")
-      .populate("lessonId", "title description order learningPathId")
+      .populate("lessonId", "title description videoUrl order learningPathId")
       .populate("classId", "name courseId coachId")
       .sort({ createdAt: -1 });
 

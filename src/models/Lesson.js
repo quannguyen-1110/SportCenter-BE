@@ -1,5 +1,17 @@
 const mongoose = require("mongoose");
 
+function isValidVideoUrl(value) {
+  if (typeof value !== "string") return false;
+  const link = value.trim();
+  if (!link) return true;
+  if (!/^https?:\/\//i.test(link)) return false;
+  try {
+    return Boolean(new URL(link).hostname);
+  } catch {
+    return false;
+  }
+}
+
 const lessonSchema = new mongoose.Schema(
   {
     classId: {
@@ -26,6 +38,12 @@ const lessonSchema = new mongoose.Schema(
       default: "",
     },
 
+    videoUrl: {
+      type: String,
+      trim: true,
+      default: "",
+      validate: { validator: isValidVideoUrl, message: "videoUrl must be an HTTP or HTTPS URL" },
+    },
     order: {
       type: Number,
       required: true,
@@ -39,5 +57,6 @@ const lessonSchema = new mongoose.Schema(
 );
 
 lessonSchema.index({ classId: 1, order: 1 });
+lessonSchema.statics.isValidVideoUrl = isValidVideoUrl;
 
 module.exports = mongoose.model("Lesson", lessonSchema);

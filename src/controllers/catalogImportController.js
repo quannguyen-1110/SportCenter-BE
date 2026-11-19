@@ -13,7 +13,7 @@ const sheets = [
   { group: "courses", name: "Khoa hoc", required: ["Mon", "Ten khoa hoc", "Hoc phi"], optional: ["Mo ta", "Trang thai"] },
   { group: "learningPaths", name: "Lo trinh", required: ["Khoa hoc", "Ten lo trinh"], optional: ["Mo ta"] },
   { group: "classes", name: "Lop hoc", required: ["Ten lop", "Khoa hoc", "Email HLV"], optional: [] },
-  { group: "lessons", name: "Bai hoc", required: ["Lop", "Lo trinh", "Thu tu", "Ten bai"], optional: ["Noi dung"] },
+  { group: "lessons", name: "Bai hoc", required: ["Lop", "Lo trinh", "Thu tu", "Ten bai"], optional: ["Noi dung", "Link video"] },
 ];
 const cellText = value => String(value ?? "").trim();
 const key = value => cellText(value).normalize("NFC").toLowerCase();
@@ -137,7 +137,12 @@ async function planImport(rows, dryRun, session) {
       if (existing && (key(existing.title) !== key(title) || !same(existing.learningPathId, path._id))) {
         throw new Error("Thứ tự này đã được dùng cho bài học khác trong lớp.");
       }
-      return stage(Lesson, lessons, existing, { classId: classItem._id, learningPathId: path._id, title, order, description: values["Noi dung"] }, title);
+      const videoUrl = values["Link video"];
+      if (!Lesson.isValidVideoUrl(videoUrl)) throw new Error("Link video phải bắt đầu bằng http:// hoặc https:// và hợp lệ.");
+      return stage(Lesson, lessons, existing, {
+        classId: classItem._id, learningPathId: path._id, title, order,
+        description: values["Noi dung"], videoUrl,
+      }, title);
     },
   };
 

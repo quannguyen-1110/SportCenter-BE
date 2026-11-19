@@ -106,7 +106,7 @@ const populateSchedule = (query) => {
     })
     .populate({
       path: "lessonId",
-      select: "title description order classId learningPathId",
+      select: "title description videoUrl order classId learningPathId",
     })
     .populate({
       path: "roomId",

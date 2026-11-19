@@ -250,7 +250,7 @@ const applyLearningPath = async (req, res) => {
       if (JSON.stringify(actual) !== JSON.stringify(expected)) fail(409, "Template lessons changed; refresh the schedule preview");
       if (new Set(templates.map(lesson => lesson.order)).size !== templates.length) fail(409, "Template lesson orders must be unique");
       return Lesson.insertMany(templates.map(lesson => ({ classId, learningPathId: id,
-        title: lesson.title, description: lesson.description, order: lesson.order })), { session });
+        title: lesson.title, description: lesson.description, videoUrl: lesson.videoUrl, order: lesson.order })), { session });
     });
     return res.status(201).json({ success: true, message: "Learning path applied successfully", data: lessons });
   } catch (error) {
